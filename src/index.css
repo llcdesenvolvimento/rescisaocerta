@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Vibrant blue palette */
+    --background: 220 30% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary: Vibrant Blue #2056df */
+    --primary: 220 82% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary: Light blue */
+    --secondary: 220 30% 94%;
+    --secondary-foreground: 222 47% 20%;
+
+    --muted: 220 20% 92%;
+    --muted-foreground: 220 15% 45%;
+
+    --accent: 220 50% 94%;
+    --accent-foreground: 220 82% 40%;
+
+    /* Success green for positive values - stronger */
+    --success: 145 85% 32%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 145 60% 92%;
+    --success-glow: 145 85% 40%;
+
+    /* Warning amber */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-muted: 38 70% 94%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 50% 95%;
+
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 220 82% 50%;
+
+    --radius: 0.75rem;
+
+    /* Custom shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(220 25% 15% / 0.04);
+    --shadow-md: 0 4px 6px -1px hsl(220 25% 15% / 0.08), 0 2px 4px -1px hsl(220 25% 15% / 0.04);
+    --shadow-lg: 0 10px 15px -3px hsl(220 25% 15% / 0.08), 0 4px 6px -2px hsl(220 25% 15% / 0.04);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 220 82% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 30% 18%;
+    --secondary-foreground: 210 20% 90%;
+
+    --muted: 220 20% 18%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 220 50% 20%;
+    --accent-foreground: 220 82% 75%;
+
+    --success: 152 76% 48%;
+    --success-foreground: 222 47% 10%;
+    --success-muted: 152 40% 18%;
+    --success-glow: 152 76% 55%;
+
+    --warning: 38 80% 55%;
+    --warning-foreground: 222 47% 10%;
+    --warning-muted: 38 40% 18%;
+
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 40% 18%;
+
+    --border: 220 30% 22%;
+    --input: 220 30% 22%;
+    --ring: 220 82% 55%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+@layer utilities {
+  .result-row-provento {
+    @apply bg-success-muted text-success;
+  }
+  
+  .result-row-desconto {
+    @apply bg-destructive-muted text-destructive;
+  }
+
+  /* GPU acceleration for smooth animations */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+  }
+}
+
+/* Quiz Funnel Animations - Optimized for mobile */
+@keyframes fade-scale-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes fade-scale-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.98);
+  }
+}
+
+.animate-fade-scale-in {
+  animation: fade-scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-scale-out {
+  animation: fade-scale-out 0.2s ease-out forwards;
+}
+
+/* Shimmer animation for progress bar - optimized */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-scale-in,
+  .animate-fade-scale-out {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
