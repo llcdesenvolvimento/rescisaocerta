@@ -117,17 +117,33 @@ export default function Quiz() {
   // Inicializa com defaultFormData; se houver ?qid= na URL e o user veio
   // de um F5/link compartilhado, busca as respostas do Supabase em background.
   const [formData, setFormData] = useState<Record<string, unknown>>(() => ({ ...defaultFormData }));
+  // True enquanto buscamos as respostas do Supabase (quando o usuário entra via
+  // link com ?qid= em outro navegador). Bloqueia a validação de step pra não
+  // redirecionar pra /quiz/1 antes das respostas chegarem.
+  const [isLoadingRespostas, setIsLoadingRespostas] = useState<boolean>(() => {
+    // Só começa em loading se a URL tem qid e estamos numa rota numérica
+    // (ex.: /quiz/5). Em /quiz/1 ou rotas especiais não precisa esperar.
+    const hasQid = new URLSearchParams(window.location.search).has('qid');
+    const stepParam = window.location.pathname.match(/\/quiz\/(\d+)/)?.[1];
+    return hasQid && stepParam !== undefined && parseInt(stepParam, 10) > 1;
+  });
 
   // Buscar respostas do banco quando ?qid= existe e formData ainda está vazio
   useEffect(() => {
-    if (!qidFromUrl) return;
+    if (!qidFromUrl) {
+      setIsLoadingRespostas(false);
+      return;
+    }
     // Se o usuário JÁ respondeu pelo menos a primeira pergunta nesta aba,
     // não sobrescreve com dados antigos do banco.
     const jaTemRespostas = Object.values(formData).some(
       (v) => v !== '' && v !== 0 && v !== false && v !== undefined && v !== null &&
         !(Array.isArray(v) && v.length === 0),
     );
-    if (jaTemRespostas) return;
+    if (jaTemRespostas) {
+      setIsLoadingRespostas(false);
+      return;
+    }
 
     let cancelled = false;
     (async () => {
@@ -138,10 +154,19 @@ export default function Quiz() {
           .eq('id', qidFromUrl)
           .maybeSingle();
 
-        if (cancelled || error || !data?.respostas) return;
-        setFormData({ ...defaultFormData, ...(data.respostas as Record<string, unknown>) });
+        if (cancelled) return;
+        if (error) {
+          console.warn('[Quiz] erro Supabase ao buscar respostas:', error);
+          setIsLoadingRespostas(false);
+          return;
+        }
+        if (data?.respostas) {
+          setFormData({ ...defaultFormData, ...(data.respostas as Record<string, unknown>) });
+        }
       } catch (err) {
         console.warn('[Quiz] erro ao recuperar respostas do banco:', err);
+      } finally {
+        if (!cancelled) setIsLoadingRespostas(false);
       }
     })();
 
@@ -225,6 +250,10 @@ export default function Quiz() {
   // Rotas especiais (processando, risco, diagnostico, extras-intro) não passam por essa validação.
   useEffect(() => {
     if (isSpecialRoute) return;
+    // Espera o load das respostas do banco terminar antes de validar — senão
+    // um link compartilhado pra /quiz/5 redirecionaria pra /quiz/1 antes das
+    // respostas chegarem do Supabase.
+    if (isLoadingRespostas) return;
 
     if (isNaN(currentIndex) || currentIndex < 0) {
       navigate(`/quiz/1${buildQuery()}`, { replace: true });
@@ -246,7 +275,7 @@ export default function Quiz() {
     if (currentIndex > maxReachableIndex) {
       navigate(`/quiz/${maxReachableIndex + 1}${buildQuery({ extras: isExtrasMode })}`, { replace: true });
     }
-  }, [currentIndex, activeQuestions, formData, navigate, isSpecialRoute, isExtrasMode, isQuestionAnswered]);
+  }, [currentIndex, activeQuestions, formData, navigate, isSpecialRoute, isExtrasMode, isQuestionAnswered, isLoadingRespostas]);
 
   // Iniciar sessão de tracking
   useEffect(() => {
@@ -435,6 +464,19 @@ export default function Quiz() {
   // Se não há pergunta válida
   if (!currentQuestion) {
     return null;
+  }
+
+  // Enquanto busca respostas do banco (link compartilhado em outro navegador),
+  // mostra um loader em vez de piscar a primeira pergunta.
+  if (isLoadingRespostas) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Carregando suas respostas...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
