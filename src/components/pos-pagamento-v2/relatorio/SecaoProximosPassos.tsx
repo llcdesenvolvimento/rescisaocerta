@@ -1,108 +1,84 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  ArrowRight, 
-  FileDown, 
-  FolderOpen, 
-  MessageSquare, 
-  Scale,
-  Clock,
-  CheckCircle2
-} from 'lucide-react';
+import { FileDown, FolderOpen, MessageSquare, Scale, AlertCircle } from 'lucide-react';
 
 const passos = [
   {
     icon: FileDown,
     titulo: 'Peça o TRCT detalhado',
-    descricao: 'Solicite ao RH o Termo de Rescisão com todas as verbas discriminadas. Sem esse documento, fica difícil saber exatamente o que foi pago.',
+    descricao: 'Solicite ao RH o Termo de Rescisão com todas as verbas discriminadas.',
     prazo: 'Prazo da empresa: 10 dias',
-    urgencia: 'alta',
   },
   {
     icon: FolderOpen,
     titulo: 'Junte seus documentos',
-    descricao: 'Separe holerites, espelhos de ponto, escalas e qualquer mensagem sobre horários ou funções. Quanto mais organizado, melhor.',
+    descricao: 'Separe holerites, espelhos de ponto, escalas e mensagens sobre horários ou funções.',
     prazo: 'Faça agora enquanto lembra',
-    urgencia: 'alta',
   },
   {
     icon: MessageSquare,
     titulo: 'Converse com o RH',
-    descricao: 'Se encontrou diferenças, procure primeiro o RH da empresa. Muitas vezes um simples questionamento formal já resolve, principalmente se você tiver uma carta bem escrita.',
+    descricao: 'Se encontrou diferenças, procure primeiro o RH. Um questionamento formal costuma resolver.',
     prazo: 'Antes de assinar a rescisão',
-    urgencia: 'media',
   },
   {
     icon: Scale,
     titulo: 'Procure um advogado se precisar',
-    descricao: 'Se os valores forem altos e a empresa não quiser resolver, um advogado trabalhista ou o sindicato da sua categoria podem te orientar sobre os próximos passos.',
-    prazo: 'Prazo: até 2 anos para ação',
-    urgencia: 'baixa',
+    descricao: 'Se os valores forem altos e a empresa não resolver, um advogado trabalhista pode orientar.',
+    prazo: 'Até 2 anos para ação',
   },
 ];
 
-const urgenciaColors = {
-  alta: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400',
-  media: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400',
-  baixa: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400',
-};
-
 export function SecaoProximosPassos() {
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b p-3 sm:p-4 bg-muted/30">
-        <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-          <ArrowRight className="w-5 h-5 flex-shrink-0" />
-          <span>O Que Fazer Agora</span>
-        </CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          Siga essa ordem pra resolver da forma mais rápida possível
+    <section className="bg-card rounded-3xl border border-border shadow-sm overflow-hidden">
+      <header className="px-5 sm:px-7 pt-6 pb-5 border-b border-border">
+        <h2 className="text-lg sm:text-xl font-extrabold text-foreground tracking-tight">
+          O que fazer agora
+        </h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+          Siga essa ordem para resolver da forma mais rápida possível.
         </p>
-      </CardHeader>
-      <CardContent className="p-3 sm:p-4">
-        <div className="space-y-3 sm:space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
-          {passos.map((passo, index) => (
-            <div key={index} className="flex items-start gap-2 sm:gap-3">
-              <div className="flex flex-col items-center">
-                <div className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-muted text-muted-foreground font-bold text-xs sm:text-sm flex-shrink-0">
+      </header>
+
+      <ol className="divide-y divide-border">
+        {passos.map((passo, index) => {
+          const Icon = passo.icon;
+          return (
+            <li key={index} className="px-5 sm:px-7 py-4">
+              <div className="flex items-start gap-3">
+                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-foreground font-bold text-xs flex-shrink-0 mt-0.5">
                   {index + 1}
                 </div>
-                {index < passos.length - 1 && (
-                  <div className="w-0.5 h-full min-h-[40px] bg-border mt-1" />
-                )}
-              </div>
-              <div className="flex-1 pb-3 sm:pb-4">
-                <div className="flex items-start gap-2 flex-wrap">
-                  <passo.icon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <h4 className="font-semibold text-sm sm:text-base flex-1">{passo.titulo}</h4>
-                </div>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1 ml-6">
-                  {passo.descricao}
-                </p>
-                <div className="mt-2 ml-6 flex items-center gap-2">
-                  <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full ${urgenciaColors[passo.urgencia as keyof typeof urgenciaColors]}`}>
-                    <Clock className="w-2.5 h-2.5 inline mr-1" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" strokeWidth={2.5} />
+                    <h3 className="text-sm font-semibold text-foreground leading-snug">
+                      {passo.titulo}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    {passo.descricao}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-1.5">
                     {passo.prazo}
-                  </span>
+                  </p>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            </li>
+          );
+        })}
+      </ol>
 
-        <div className="mt-4 p-3 bg-muted/30 rounded-lg border">
-          <div className="flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs sm:text-sm font-medium">
-                Não assine sem conferir!
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                Depois que você assina o TRCT, contestar valores fica bem mais complicado. Se tiver dúvida, peça um prazo antes de assinar.
-              </p>
-            </div>
+      <footer className="px-5 sm:px-7 py-4 bg-muted/20 border-t border-border">
+        <div className="flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-foreground mt-0.5 flex-shrink-0" strokeWidth={2.5} />
+          <div>
+            <p className="text-sm font-bold text-foreground">Não assine sem conferir</p>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              Depois de assinar o TRCT, contestar valores fica mais complicado. Em caso de dúvida, peça um prazo.
+            </p>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </footer>
+    </section>
   );
 }

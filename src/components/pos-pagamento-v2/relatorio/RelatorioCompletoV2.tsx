@@ -1,14 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DadosFluxoAnterior, ResultadoExtras } from '@/types/pos-pagamento-v2';
+import {
+  DadosFluxoAnterior,
+  ResultadoExtras,
+  FormularioPosPagamentoV2,
+  defaultDadosJornadaV2,
+  defaultDadosAdicionaisV2,
+  defaultDadosValoresExtrasV2,
+} from '@/types/pos-pagamento-v2';
 import { SecaoBasico, LinhaBasico } from './SecaoBasico';
 import { SecaoExtras } from './SecaoExtras';
-import { SecaoErros } from './SecaoErros';
 import { SecaoProximosPassos } from './SecaoProximosPassos';
 import { SecaoUpsellCarta } from './SecaoUpsellCarta';
 import { SecaoUpsellChecklist } from './SecaoUpsellChecklist';
+import { FabUpsell } from './FabUpsell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Download, FileText, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Download, FileText, Loader2, Wallet } from 'lucide-react';
 import { formatarMoeda } from '@/lib/calculo-extras';
 import { toast } from '@/hooks/use-toast';
 import { VerbaRescisoria } from '@/lib/calculadora-rescisao-completa';
@@ -16,13 +23,22 @@ import { VerbaRescisoria } from '@/lib/calculadora-rescisao-completa';
 interface RelatorioCompletoV2Props {
   dadosBase: DadosFluxoAnterior;
   extras: ResultadoExtras;
+  formulario?: FormularioPosPagamentoV2;
   onVoltar: () => void;
   verbasOriginais?: VerbaRescisoria[];
   emailUsuario?: string;
   calculoId?: string;
 }
 
-export function RelatorioCompletoV2({ dadosBase, extras, onVoltar, verbasOriginais, emailUsuario: emailProp, calculoId: calculoIdProp }: RelatorioCompletoV2Props) {
+export function RelatorioCompletoV2({
+  dadosBase,
+  extras,
+  formulario,
+  onVoltar,
+  verbasOriginais,
+  emailUsuario: emailProp,
+  calculoId: calculoIdProp,
+}: RelatorioCompletoV2Props) {
   const reportRef = useRef<HTMLDivElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   
@@ -30,44 +46,97 @@ export function RelatorioCompletoV2({ dadosBase, extras, onVoltar, verbasOrigina
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
   
-  const temSuspeitaErro = dadosBase.suspeitaErroEmpregador?.toLowerCase() === 'sim';
   const safeExtras: ResultadoExtras = {
     ...extras,
     totalExtrasMensal: extras.totalExtrasMensal ?? 0,
     itensAplicaveis: extras.itensAplicaveis ?? [],
   };
-  const temExtras = safeExtras.totalExtrasMensal > 0;
+
+  // Parse local (evita off-by-one por UTC). Aceita 'YYYY-MM-DD' e Date.
+  const parseLocal = (s: string): Date => {
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return new Date(s);
+  };
 
   const calcularMesesTrabalhados = (): number => {
     if (!dadosBase.dataAdmissao || !dadosBase.dataDesligamento) return 12;
     try {
-      const admissao = new Date(dadosBase.dataAdmissao);
-      const desligamento = new Date(dadosBase.dataDesligamento);
-      const diffMs = desligamento.getTime() - admissao.getTime();
-      const meses = Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
+      const admissao = parseLocal(dadosBase.dataAdmissao);
+      const desligamento = parseLocal(dadosBase.dataDesligamento);
+      let meses =
+        (desligamento.getFullYear() - admissao.getFullYear()) * 12 +
+        (desligamento.getMonth() - admissao.getMonth());
+      if (desligamento.getDate() >= admissao.getDate()) meses += 1; // mês corrente conta
       return Math.max(1, meses);
     } catch {
       return 12;
     }
   };
 
-  const calcularTempoContrato = (): string => {
+  const calcularTempoServicoDetalhado = (): string => {
     if (!dadosBase.dataAdmissao || !dadosBase.dataDesligamento) return '';
     try {
-      const admissao = new Date(dadosBase.dataAdmissao);
-      const desligamento = new Date(dadosBase.dataDesligamento);
-      const diffMs = desligamento.getTime() - admissao.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const anos = Math.floor(diffDays / 365);
-      const meses = Math.floor((diffDays % 365) / 30);
+      const admissao = parseLocal(dadosBase.dataAdmissao);
+      const desligamento = parseLocal(dadosBase.dataDesligamento);
+      let anos = desligamento.getFullYear() - admissao.getFullYear();
+      let meses = desligamento.getMonth() - admissao.getMonth();
+      let dias = desligamento.getDate() - admissao.getDate();
+      if (dias < 0) {
+        const ultimoDiaMesAnterior = new Date(
+          desligamento.getFullYear(),
+          desligamento.getMonth(),
+          0,
+        ).getDate();
+        dias += ultimoDiaMesAnterior;
+        meses -= 1;
+      }
+      if (meses < 0) {
+        meses += 12;
+        anos -= 1;
+      }
+      const partes: string[] = [];
+      if (anos > 0) partes.push(`${anos} ano${anos > 1 ? 's' : ''}`);
+      if (meses > 0) partes.push(`${meses} ${meses > 1 ? 'meses' : 'mês'}`);
+      if (dias > 0 || partes.length === 0) partes.push(`${dias} dia${dias !== 1 ? 's' : ''}`);
+      return partes.join(', ');
+    } catch {
+      return '';
+    }
+  };
+
+  const calcularTempoContrato = (): string => {
+    // Versão curta usada pelos upsells (sem dias).
+    if (!dadosBase.dataAdmissao || !dadosBase.dataDesligamento) return '';
+    try {
+      const admissao = parseLocal(dadosBase.dataAdmissao);
+      const desligamento = parseLocal(dadosBase.dataDesligamento);
+      let anos = desligamento.getFullYear() - admissao.getFullYear();
+      let meses = desligamento.getMonth() - admissao.getMonth();
+      if (desligamento.getDate() < admissao.getDate()) meses -= 1;
+      if (meses < 0) {
+        meses += 12;
+        anos -= 1;
+      }
       let resultado = '';
       if (anos > 0) resultado += `${anos} ano${anos > 1 ? 's' : ''} e `;
-      resultado += `${meses} ${meses > 1 ? 'meses' : 'mês'}`;
+      resultado += `${meses} ${meses !== 1 ? 'meses' : 'mês'}`;
       return resultado;
     } catch {
       return '';
     }
   };
+
+  const formatarDataPtBr = (data: string): string => {
+    if (!data) return '—';
+    try {
+      return parseLocal(data).toLocaleDateString('pt-BR');
+    } catch {
+      return data;
+    }
+  };
+
+  const tempoServicoDetalhado = calcularTempoServicoDetalhado();
 
   const mesesTrabalhados = calcularMesesTrabalhados();
 
@@ -169,62 +238,121 @@ export function RelatorioCompletoV2({ dadosBase, extras, onVoltar, verbasOrigina
     }
   };
 
+  const totalGeral = totalBasicoFinal + totalExtrasPeriodo;
+  const dataEmissao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  const formularioEfetivo: FormularioPosPagamentoV2 = formulario ?? {
+    jornada: defaultDadosJornadaV2,
+    adicionais: defaultDadosAdicionaisV2,
+    valoresExtras: defaultDadosValoresExtrasV2,
+  };
+
   return (
-    <div ref={reportRef} className="w-full max-w-2xl lg:max-w-4xl mx-auto space-y-4 sm:space-y-6">
+    <div ref={reportRef} className="w-full max-w-3xl mx-auto space-y-4 sm:space-y-5 px-0">
 
-      {/* Seção 1: Resumo */}
-      <Card className="overflow-hidden">
-        <CardContent className="p-4 sm:p-6 bg-gradient-to-br from-primary/5 to-primary/10">
-          <div className="flex items-start gap-3">
-            <div className="p-2 sm:p-3 rounded-full bg-primary/10 flex-shrink-0">
-              <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
-            </div>
-            <div className="flex-1">
-              <h1 className="text-lg sm:text-xl font-bold text-foreground">
+      {/* ============ DADOS DO CONTRATO (card azul, topo) ============ */}
+      <section className="bg-primary rounded-3xl shadow-sm overflow-hidden text-primary-foreground">
+        <div className="px-5 sm:px-7 py-5">
+          <p className="text-[10px] font-bold uppercase tracking-widest mb-3 text-primary-foreground/70">
+            Dados do contrato
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <ContratoMetadata icon={Calendar} label="Admissão" value={formatarDataPtBr(dadosBase.dataAdmissao)} variant="onPrimary" />
+            <ContratoMetadata icon={Calendar} label="Desligamento" value={formatarDataPtBr(dadosBase.dataDesligamento)} variant="onPrimary" />
+            <ContratoMetadata icon={Clock} label="Tempo de serviço" value={tempoServicoDetalhado || '—'} variant="onPrimary" />
+            <ContratoMetadata icon={Wallet} label="Salário base" value={formatarMoeda(dadosBase.salarioBrutoMensal)} variant="onPrimary" />
+          </div>
+        </div>
+      </section>
+
+      {/* ============ CAPA ============ */}
+      <section className="bg-card rounded-3xl border border-border shadow-sm overflow-hidden">
+        <div className="px-5 sm:px-7 pt-6 pb-5">
+          {/* Cabeçalho discreto */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-5 rounded-full bg-primary" />
+              <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground uppercase tracking-[0.18em]">
                 Relatório de Rescisão
-              </h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                Análise detalhada dos seus direitos trabalhistas
-              </p>
+              </span>
             </div>
+            <span className="text-[10px] text-muted-foreground">{dataEmissao}</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-            <div className="p-3 lg:p-5 rounded-lg bg-background border text-center">
-              <p className="text-[10px] sm:text-xs lg:text-sm text-muted-foreground uppercase tracking-wide">
-                Verbas Básicas Totais
-              </p>
-              <p className="text-xl sm:text-2xl lg:text-3xl font-black text-primary mt-1">
-                {formatarMoeda(totalBasicoFinal)}
-              </p>
-            </div>
-             <div className="p-3 lg:p-5 rounded-lg bg-background border text-center">
-              <p className="text-[10px] sm:text-xs lg:text-sm text-muted-foreground uppercase tracking-wide">
-                Verbas Extras Totais
-              </p>
-              <p className="text-xl sm:text-2xl lg:text-3xl font-black text-green-600 dark:text-green-400 mt-1">
-                {formatarMoeda(totalExtrasPeriodo)}
-              </p>
-              <p className="text-[10px] lg:text-xs text-muted-foreground mt-0.5">
-                {safeExtras.itensAplicaveis.length} {safeExtras.itensAplicaveis.length === 1 ? 'item' : 'itens'} • {mesesTrabalhados} meses
-              </p>
-            </div>
+          {/* Título principal */}
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground leading-tight">
+            <span className="text-primary">Análise Completa</span> da sua Rescisão Trabalhista
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-2xl">
+            Detalhamento de cada verba que você tem direito a receber, com base na CLT 2026.
+          </p>
+        </div>
+
+        {/* Faixa de totais */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 border-t border-border">
+          <div className="px-5 sm:px-7 py-5 border-b sm:border-b-0 sm:border-r border-border">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              Verbas básicas
+            </p>
+            <p className="text-xl sm:text-2xl font-extrabold text-success mt-1 tabular-nums">
+              {formatarMoeda(totalBasicoFinal)}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {linhasBasico.length} {linhasBasico.length === 1 ? 'item' : 'itens'}
+            </p>
           </div>
-        </CardContent>
-      </Card>
+          <div className="px-5 sm:px-7 py-5 border-b sm:border-b-0 sm:border-r border-border">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              Verbas extras
+            </p>
+            <p className="text-xl sm:text-2xl font-extrabold text-primary mt-1 tabular-nums">
+              {formatarMoeda(totalExtrasPeriodo)}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {safeExtras.itensAplicaveis.length} {safeExtras.itensAplicaveis.length === 1 ? 'item' : 'itens'} · {mesesTrabalhados} meses
+            </p>
+          </div>
+          <div className="px-5 sm:px-7 py-5 bg-muted/30">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              Total a receber
+            </p>
+            <p className="text-xl sm:text-2xl font-extrabold text-foreground mt-1 tabular-nums">
+              {formatarMoeda(totalGeral)}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Básicas + extras
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* Seção 2: Verbas Básicas */}
-      <SecaoBasico 
-        linhas={linhasBasico} 
+      <SecaoBasico
+        linhas={linhasBasico}
         totalBasico={totalBasicoFinal}
         dadosBase={dadosBase}
       />
 
       {/* Seção 3: Verbas Extras */}
-      <SecaoExtras 
-        extras={safeExtras} 
+      <SecaoExtras
+        extras={safeExtras}
         mesesTrabalhados={mesesTrabalhados}
+        dadosBase={dadosBase}
+        formulario={formularioEfetivo}
       />
+
+      {/* Título dos upsells */}
+      <div id="upsells" className="px-5 sm:px-7 pt-8 sm:pt-12 text-center">
+        <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.18em]">
+          Recomendados para você
+        </span>
+        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground leading-tight mt-3">
+          Torne sua rescisão<br className="sm:hidden" /> <span className="text-primary">ainda mais fácil</span>
+        </h2>
+        <p className="text-[13px] sm:text-[15px] text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
+          Ferramentas prontas pra te ajudar a cobrar a empresa e garantir o que é seu, sem complicação.
+        </p>
+      </div>
 
       {/* Seção 4: Upsell - Carta ao RH */}
       <SecaoUpsellCarta
@@ -248,9 +376,6 @@ export function RelatorioCompletoV2({ dadosBase, extras, onVoltar, verbasOrigina
         calculoId={calculoId}
       />
 
-      {/* Seção 5: Como conferir sua rescisão */}
-      <SecaoErros temSuspeitaErro={temSuspeitaErro} temExtras={temExtras} />
-
       {/* Seção 5.5: Upsell - Checklist de Erros */}
       <SecaoUpsellChecklist
         dadosChecklist={{
@@ -270,6 +395,36 @@ export function RelatorioCompletoV2({ dadosBase, extras, onVoltar, verbasOrigina
       {/* Seção 6: Próximos passos */}
       <SecaoProximosPassos />
 
+      {/* FAB flutuante para upsells */}
+      <FabUpsell />
+
+    </div>
+  );
+}
+
+function ContratoMetadata({
+  icon: Icon,
+  label,
+  value,
+  variant = 'default',
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  variant?: 'default' | 'onPrimary';
+}) {
+  const onPrimary = variant === 'onPrimary';
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-1">
+        <Icon className={`w-3 h-3 ${onPrimary ? 'text-primary-foreground/70' : 'text-muted-foreground/70'}`} />
+        <p className={`text-[10px] uppercase tracking-wider ${onPrimary ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+          {label}
+        </p>
+      </div>
+      <p className={`text-xs sm:text-sm font-bold tabular-nums break-words ${onPrimary ? 'text-primary-foreground' : 'text-foreground'}`}>
+        {value}
+      </p>
     </div>
   );
 }

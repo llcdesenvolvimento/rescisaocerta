@@ -1,4 +1,3 @@
-import { Logo } from "./Logo";
 import { Mail, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -19,13 +18,10 @@ export function Footer() {
     <footer className="pt-10 sm:pt-12 pb-6 sm:pb-8 px-4 sm:px-6" style={{ backgroundColor: "#080d1a" }}>
       <div className="max-w-5xl mx-auto">
 
-        {/* Logo + Sobre */}
-        <div className="text-center mb-8 sm:mb-10">
-          <div className="flex justify-center mb-4">
-            <Logo variant="light" size="lg" />
-          </div>
-          <p className="text-xs sm:text-sm text-white/60 leading-relaxed max-w-md mx-auto">
-            Plataforma educativa dedicada a ajudar trabalhadores brasileiros a entenderem seus direitos na rescisão do contrato de trabalho.
+        {/* Nome da marca no topo (alinhado com a coluna Navegação) */}
+        <div className="mb-8 sm:mb-10">
+          <p className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+            Rescisão Certa
           </p>
         </div>
 
@@ -74,16 +70,16 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Divisor + Aviso Legal */}
-        <div className="border-t border-white/10 pt-5 sm:pt-6 space-y-3">
-          <p className="text-[10px] sm:text-[11px] text-white/40 leading-relaxed">
-            <strong className="text-white/50">⚠ Aviso Legal:</strong> Os cálculos e informações têm caráter exclusivamente informativo e educacional, baseados na CLT, súmulas do TST e leis complementares. Não configuram assessoria jurídica nem substituem a orientação de um advogado habilitado pela OAB. Valores reais podem variar conforme convenção coletiva e situação individual. Ao utilizar esta plataforma, o usuário concorda com os{" "}
-            <Link to="/termos-de-uso" className="text-white/55 underline underline-offset-2 hover:text-white/80">Termos de Uso</Link>{" "}
-            e a{" "}
-            <Link to="/politica-de-privacidade" className="text-white/55 underline underline-offset-2 hover:text-white/80">Política de Privacidade</Link>.
+        {/* Divisor + Copyright */}
+        <div className="border-t border-white/10 pt-5 sm:pt-6 space-y-1">
+          <p className="text-xs sm:text-sm text-white/80 font-medium">
+            © {new Date().getFullYear()} Rescisão Certa · Aileron Tecnologia LTDA
           </p>
-          <p className="text-[10px] sm:text-xs text-white/25">
-            © {new Date().getFullYear()} Rescisão Certa · LLC Desenvolvimento Digital LTDA · CNPJ 58.455.659/0001-12
+          <p className="text-xs sm:text-sm text-white/70">
+            CNPJ 62.911.864/0001-12
+          </p>
+          <p className="text-xs sm:text-sm text-white/70">
+            Sitio Shn Quadra 2 Bloco F SN Sala 625 e 626, Asa Norte, Brasília, DF
           </p>
         </div>
 

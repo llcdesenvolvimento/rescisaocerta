@@ -50,7 +50,9 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
 
   const isBypass = email.toLowerCase() === BYPASS_EMAIL;
   const isBypassPrice = email.toLowerCase() === BYPASS_PRICE_EMAIL;
-  const upsellAmount = isBypassPrice ? 1 : 690;
+  // TEMP TEST: upsell a R$ 0,01 (reverter para: isBypassPrice ? 1 : 690)
+  void isBypassPrice;
+  const upsellAmount = 1;
 
   useEffect(() => {
     return () => {
@@ -58,14 +60,35 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
     };
   }, []);
 
-  // Check if checklist was already generated
+  // Verifica se o checklist já foi gerado para este cálculo (persistido no banco).
+  // Permite que, após F5, o upsell apareça já desbloqueado se o usuário pagou antes.
   useEffect(() => {
-    const saved = sessionStorage.getItem(`checklist-${calcId}`);
-    if (saved) {
-      setChecklistGerado(saved);
-      setJaDesbloqueado(true);
-      setEtapa('checklist-gerado');
-    }
+    if (!calcId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('relatorios')
+          .select('conteudo')
+          .eq('calculo_id', calcId)
+          .eq('tipo', 'checklist')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        const checklist = (data?.conteudo as { checklist?: string } | null)?.checklist;
+        if (checklist) {
+          setChecklistGerado(checklist);
+          setJaDesbloqueado(true);
+          setEtapa('checklist-gerado');
+        }
+      } catch {
+        // Silently ignore — fallback é o estado bloqueado padrão.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [calcId]);
 
   const appendTransactionId = () => {
@@ -98,7 +121,7 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('create-pix-v2', {
+      const { data, error } = await supabase.functions.invoke('create-pix', {
         body: { amount: upsellAmount, email, calculoId: calcId || undefined },
       });
 
@@ -136,7 +159,7 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
       }
       try {
         const { data } = await supabase.functions.invoke('verificar-pix', { body: { chargeId: cid } });
-        if (data?.status === 'paid') {
+        if (data?.paid === true || data?.status === 'pago') {
           if (pollingRef.current) clearInterval(pollingRef.current);
           toast({ title: 'Pagamento confirmado! ✅' });
           appendTransactionId();
@@ -155,7 +178,7 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
     try {
       const { data, error } = await supabase.functions.invoke('verificar-pix', { body: { chargeId } });
       if (error) throw error;
-      if (data?.status === 'paid') {
+      if (data?.paid === true || data?.status === 'pago') {
         if (pollingRef.current) clearInterval(pollingRef.current);
         toast({ title: 'Pagamento confirmado! ✅' });
         appendTransactionId();
@@ -177,13 +200,40 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
       const { data, error } = await supabase.functions.invoke('gerar-checklist-rescisao', {
         body: dadosChecklist,
       });
-      if (error) throw error;
+      if (error) {
+        console.error('[gerar-checklist-rescisao] error:', error);
+        throw error;
+      }
+      if (data?.error) {
+        console.error('[gerar-checklist-rescisao] data.error:', data);
+        throw new Error(data.error);
+      }
+      if (!data?.checklist) {
+        console.error('[gerar-checklist-rescisao] resposta sem checklist:', data);
+        throw new Error('Resposta da IA veio vazia');
+      }
       setChecklistGerado(data.checklist);
       setEtapa('checklist-gerado');
       setJaDesbloqueado(true);
-      sessionStorage.setItem(`checklist-${calcId}`, data.checklist);
-    } catch {
-      toast({ title: 'Erro ao gerar checklist', description: 'Tente novamente.', variant: 'destructive' });
+      // Persiste no banco pra sobreviver a F5 / novo navegador.
+      if (calcId) {
+        try {
+          await supabase.from('relatorios').insert({
+            calculo_id: calcId,
+            tipo: 'checklist',
+            conteudo: { checklist: data.checklist },
+          });
+        } catch (persistErr) {
+          console.error('[gerar-checklist-rescisao] erro ao persistir:', persistErr);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Tente novamente.';
+      toast({
+        title: 'Erro ao gerar checklist',
+        description: msg,
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -223,16 +273,19 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
           {qrCode && (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground text-center">Ou copie o código PIX:</p>
-              <div className="flex gap-2">
-                <Input readOnly value={qrCode} className="text-xs font-mono" onClick={(e) => (e.target as HTMLInputElement).select()} />
-                <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(qrCode); toast({ title: 'Código copiado!' }); }}>
-                  <Copy className="w-4 h-4" />
-                </Button>
-              </div>
+              <Input readOnly value={qrCode} className="text-xs font-mono" onClick={(e) => (e.target as HTMLInputElement).select()} />
             </div>
           )}
-          <Button onClick={handleVerificarManual} disabled={checkingPayment} className="w-full" size="lg">
-            {checkingPayment ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Verificando...</> : 'Consultar pagamento'}
+          <Button
+            onClick={() => {
+              if (!qrCode) return;
+              navigator.clipboard.writeText(qrCode);
+              toast({ title: 'Código copiado!' });
+            }}
+            className="w-full"
+            size="lg"
+          >
+            <Copy className="w-4 h-4 mr-2" /> Copiar Código PIX
           </Button>
           <div className="border-t pt-3 space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">O que você vai receber:</p>
@@ -275,30 +328,82 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
     }
 
     if (etapa === 'checklist-gerado') {
-      // Parse checklist text into structured items
+      // Parse checklist text into structured items.
+      // Aceita formatos:
+      //   "⚠️ ERRO 1: Título"
+      //   "1. Título"  /  "1) Título"
+      //   "Título" precedido apenas por emoji
+      // Linhas seguintes podem ser:
+      //   "Risco no seu caso: Alto — ..."
+      //   "Onde conferir: ..."
+      //   "O que verificar: ..."
       const parseChecklist = (text: string) => {
-        const lines = text.split('\n').filter(l => l.trim());
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
         const items: { titulo: string; risco: string; detalhe: string }[] = [];
         let current: { titulo: string; risco: string; detalhe: string } | null = null;
 
+        const pushCurrent = () => {
+          if (current && current.titulo.length > 0) items.push(current);
+          current = null;
+        };
+
+        // Header de novo item: emoji opcional + "ERRO N:" OU "N." no início.
+        // Captura: [emoji][ERRO N: ou N.][texto restante]
+        const headerWithErro = /^(?:[⚠️✅❌🔴🟡🟢🔍ℹ️]\s*)?ERRO\s*\d+\s*[:\-.]\s*(.+)$/i;
+        const headerNumerado = /^(?:[⚠️✅❌🔴🟡🟢🔍ℹ️]\s*)?(\d{1,2})[.)]\s+(.+)$/;
+        const headerEmojiTitulo = /^([⚠️✅❌🔴🟡🟢🔍ℹ️])\s+([A-ZÀ-Ú][^\n]{4,})/;
+
+        const riscoLine = /^(?:Risco[^:]*:|Risco:|⚠️\s*Risco)\s*(.+)$/i;
+        const labelDetalhe = /^(Onde conferir|O que verificar|Como verificar|Atenção)[:\-]\s*(.+)$/i;
+
         for (const line of lines) {
-          const trimmed = line.trim();
-          // Match lines like "⚠️ ERRO 1:", "✅ ERRO 2:", "❌ ERRO 3:", or numbered items
-          const erroMatch = trimmed.match(/^(?:[⚠️✅❌🔴🟡🟢]*\s*)?(?:ERRO\s*\d+[:\-.]?\s*|[\d]+[.\-)\s]+)(.*)/i);
-          if (erroMatch) {
-            if (current) items.push(current);
-            current = { titulo: erroMatch[1].trim(), risco: '', detalhe: '' };
-          } else if (current) {
-            const riscoMatch = trimmed.match(/^Risco[^:]*:\s*(.*)/i);
-            if (riscoMatch) {
-              current.risco = riscoMatch[1].trim();
-            } else if (trimmed.length > 0 && !trimmed.match(/^[-=_]{3,}$/)) {
-              current.detalhe += (current.detalhe ? ' ' : '') + trimmed;
-            }
+          // Pula separadores e linhas de resumo final genéricas
+          if (/^[-=_*]{3,}$/.test(line)) continue;
+
+          const mErro = line.match(headerWithErro);
+          const mNum = line.match(headerNumerado);
+          const mEmoji = line.match(headerEmojiTitulo);
+
+          let titulo = '';
+          if (mErro) {
+            titulo = mErro[1].trim();
+          } else if (mNum) {
+            titulo = mNum[2].trim();
+          } else if (mEmoji) {
+            titulo = mEmoji[2].trim();
           }
+
+          if (titulo) {
+            pushCurrent();
+            current = { titulo, risco: '', detalhe: '' };
+            continue;
+          }
+
+          if (!current) continue;
+
+          const mRisco = line.match(riscoLine);
+          if (mRisco) {
+            current.risco = mRisco[1].trim();
+            // Pode ter explicação após "Alto — ..." que também é detalhe valioso
+            const aposTraco = mRisco[1].split(/[—–-]/).slice(1).join('—').trim();
+            if (aposTraco) {
+              current.detalhe += (current.detalhe ? ' ' : '') + aposTraco;
+            }
+            continue;
+          }
+
+          const mLabel = line.match(labelDetalhe);
+          if (mLabel) {
+            current.detalhe += (current.detalhe ? ' · ' : '') + `${mLabel[1]}: ${mLabel[2].trim()}`;
+            continue;
+          }
+
+          current.detalhe += (current.detalhe ? ' ' : '') + line;
         }
-        if (current) items.push(current);
-        return items;
+        pushCurrent();
+
+        // Descarta itens sem título substantivo (ex.: "01" sozinho).
+        return items.filter(it => it.titulo.length >= 4);
       };
 
       const items = parseChecklist(checklistGerado);
@@ -436,7 +541,6 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
                     <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
                       <Lock className="w-6 h-6 text-muted-foreground" />
                     </div>
-                    <p className="font-bold text-sm sm:text-base">Checklist Bloqueado</p>
                     <p className="text-xs text-muted-foreground max-w-[250px]">
                       Veja os 15 erros mais comuns, analisados com base no <strong>seu contrato</strong>
                     </p>

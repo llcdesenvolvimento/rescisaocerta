@@ -1,25 +1,62 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, FileText, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
+// Página legada — o fluxo principal agora vai direto do pagamento para
+// `/relatorio?id=<calculoId>&paid=1`. Mantida apenas para links antigos.
 export default function PosPagamentoConfirmacao() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [loading, setLoading] = useState(false);
+
   const transactionId = searchParams.get('transaction_id');
+  const paymentId = searchParams.get('payment_id');
+  const calculoIdUrl = searchParams.get('id') || searchParams.get('calculoId');
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  const handleGerarAnalise = () => {
-    const calculoId = sessionStorage.getItem('rescisao-calculo-id');
-    const params = new URLSearchParams();
-    if (calculoId) params.set('id', calculoId);
-    if (transactionId) params.set('transaction_id', transactionId);
-    navigate(`/relatorio?${params.toString()}`);
+  const resolveCalculoId = async (): Promise<string | null> => {
+    if (calculoIdUrl) return calculoIdUrl;
+    if (!paymentId) return null;
+    try {
+      const { data } = await supabase
+        .from('pagamentos')
+        .select('calculo_id')
+        .eq('provider_charge_id', paymentId)
+        .maybeSingle();
+      return data?.calculo_id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleGerarAnalise = async () => {
+    setLoading(true);
+    try {
+      const calculoId = await resolveCalculoId();
+      if (!calculoId) {
+        toast({
+          title: 'Não conseguimos abrir o relatório',
+          description: 'Tente refazer o cálculo ou entre em contato com o suporte.',
+          variant: 'destructive',
+        });
+        setLoading(false);
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set('id', calculoId);
+      if (transactionId) params.set('transaction_id', transactionId);
+      navigate(`/relatorio?${params.toString()}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const items = [
@@ -80,10 +117,11 @@ export default function PosPagamentoConfirmacao() {
           {/* Botão principal */}
           <Button
             onClick={handleGerarAnalise}
-            className="w-full h-14 rounded-xl text-base font-bold bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20"
+            disabled={loading}
+            className="w-full h-14 rounded-xl text-base font-bold bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-70"
           >
-            GERAR ANÁLISE COMPLETA
-            <ArrowRight className="w-5 h-5 ml-2" />
+            {loading ? 'Abrindo análise...' : 'GERAR ANÁLISE COMPLETA'}
+            {!loading && <ArrowRight className="w-5 h-5 ml-2" />}
           </Button>
 
           {/* Selo de segurança */}

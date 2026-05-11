@@ -19,7 +19,7 @@ export default function PoliticaDePrivacidade() {
 
           <div className="prose-sm text-gray-600 leading-relaxed space-y-6 text-sm">
             <p>
-              A LLC Desenvolvimento Digital LTDA ("Rescisão Certa", "nós"), inscrita no CNPJ sob o nº 58.455.659/0001-12, 
+              A Aileron Tecnologia LTDA ("Rescisão Certa", "nós"), inscrita no CNPJ sob o nº 62.911.864/0001-12, 
               é a controladora dos dados pessoais tratados por meio desta plataforma. Esta Política de Privacidade descreve 
               como coletamos, utilizamos, armazenamos e protegemos suas informações pessoais, em conformidade com a 
               Lei Geral de Proteção de Dados (Lei nº 13.709/2018 - LGPD).

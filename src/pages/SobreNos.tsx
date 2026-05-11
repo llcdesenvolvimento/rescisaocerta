@@ -48,9 +48,9 @@ export default function SobreNos() {
             <section>
               <h2 className="text-base font-semibold text-gray-800 mb-2">Quem somos</h2>
               <p>
-                A Rescisão Certa é um produto da <strong>LLC Desenvolvimento Digital LTDA</strong>, empresa brasileira
+                A Rescisão Certa é um produto da <strong>Aileron Tecnologia LTDA</strong>, empresa brasileira
                 de tecnologia sediada em Brasília – DF, especializada no desenvolvimento de soluções digitais que
-                simplificam o acesso à informação. A LLC acredita que ferramentas bem projetadas podem resolver
+                simplificam o acesso à informação. A Aileron acredita que ferramentas bem projetadas podem resolver
                 problemas reais — e a desinformação sobre direitos trabalhistas é um dos maiores problemas que
                 o trabalhador brasileiro enfrenta.
               </p>
@@ -173,7 +173,7 @@ export default function SobreNos() {
                   trabalhador.
                 </p>
                 <p>
-                  A Rescisão Certa e a LLC Desenvolvimento Digital LTDA <strong>não se responsabilizam</strong>{" "}
+                  A Rescisão Certa e a Aileron Tecnologia LTDA <strong>não se responsabilizam</strong>{" "}
                   por decisões tomadas exclusivamente com base nos cálculos e informações apresentados nesta
                   plataforma. Para decisões de natureza jurídica, financeira ou trabalhista, recomendamos a
                   consulta a um profissional qualificado.
@@ -200,8 +200,8 @@ export default function SobreNos() {
             <section>
               <h2 className="text-base font-semibold text-gray-800 mb-2">Informações da empresa</h2>
               <div className="bg-gray-50 rounded-lg p-4 space-y-1.5 text-sm text-gray-600">
-                <p><strong>Razão Social:</strong> LLC Desenvolvimento Digital LTDA</p>
-                <p><strong>CNPJ:</strong> 58.455.659/0001-12</p>
+                <p><strong>Razão Social:</strong> Aileron Tecnologia LTDA</p>
+                <p><strong>CNPJ:</strong> 62.911.864/0001-12</p>
                 <p><strong>Endereço:</strong> Setor SHN Quadra 2, Bloco F, Salas 625 e 626, Asa Norte, Brasília – DF</p>
                 <p><strong>E-mail:</strong>{" "}
                   <a href="mailto:suporterescisaocerta@gmail.com" className="text-blue-600 hover:underline">

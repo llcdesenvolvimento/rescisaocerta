@@ -120,7 +120,7 @@ export default function Contato() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">CNPJ</p>
-                  <p>58.455.659/0001-12</p>
+                  <p>62.911.864/0001-12</p>
                 </div>
               </div>
             </div>

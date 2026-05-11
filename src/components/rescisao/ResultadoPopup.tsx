@@ -978,8 +978,8 @@ export function ResultadoPopup({ open, onOpenChange, resultado, formData: formDa
 
                   {/* Dados da Empresa */}
                   <div className="bg-muted/50 rounded-lg p-3 text-center space-y-0.5 border border-border">
-                    <p className="text-[11px] font-bold text-foreground">LLC Desenvolvimento Digital LTDA</p>
-                    <p className="text-[10px] text-muted-foreground">CNPJ: 58.455.659/0001-12</p>
+                    <p className="text-[11px] font-bold text-foreground">Aileron Tecnologia LTDA</p>
+                    <p className="text-[10px] text-muted-foreground">CNPJ: 62.911.864/0001-12</p>
                     <p className="text-[10px] text-primary">
                       Dúvidas?{" "}
                       <a href="mailto:suporterescisaocerta@gmail.com" className="font-bold underline">

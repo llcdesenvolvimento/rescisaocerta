@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -9,19 +9,73 @@ interface UsePixPaymentOptions {
   valorBase: number | undefined;
 }
 
+/**
+ * usePixPayment — orquestra a geração do PIX e o polling de confirmação.
+ *
+ * Persistência: TUDO no banco (sem sessionStorage). Ao montar, busca o último
+ * pagamento pendente em `public.pagamentos` filtrando por `calculo_id` — se
+ * houver, restaura o QR Code. F5 funciona porque o estado vem do banco.
+ */
 export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase }: UsePixPaymentOptions) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+  const [searchParams] = useSearchParams();
+
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [qrCode, setQrCode] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [chargeId, setChargeId] = useState("");
   const [calculoId, setCalculoId] = useState(initialCalculoId);
-  const [codigoUnico, setCodigoUnico] = useState(() => sessionStorage.getItem("rescisao-codigo-unico") || "");
+  const [codigoUnico, setCodigoUnico] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Nome/email do pagamento (recuperados do banco em F5)
+  const [recoveredName, setRecoveredName] = useState("");
+  const [recoveredEmail, setRecoveredEmail] = useState("");
+
+  // Sincroniza com `calculoId` recebido por prop (vem do useSaveCalculo)
+  useEffect(() => {
+    if (initialCalculoId && initialCalculoId !== calculoId) {
+      setCalculoId(initialCalculoId);
+    }
+  }, [initialCalculoId, calculoId]);
+
+  // Recupera pagamento pendente do banco quando o calculoId estiver disponível.
+  // Permite F5 e link em outro navegador continuarem mostrando o QR Code.
+  useEffect(() => {
+    if (!calculoId || qrCodeUrl) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("pagamentos")
+          .select("qr_code, qr_code_url, provider_charge_id, status, nome, email")
+          .eq("calculo_id", calculoId)
+          .in("status", ["pendente", "pago"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cancelled || error || !data) return;
+        if (data.qr_code && data.qr_code_url) {
+          setQrCode(data.qr_code);
+          setQrCodeUrl(data.qr_code_url);
+          if (data.provider_charge_id) setChargeId(data.provider_charge_id);
+          if (data.nome) setRecoveredName(data.nome);
+          if (data.email) setRecoveredEmail(data.email);
+        }
+      } catch (err) {
+        console.warn("[usePixPayment] erro ao recuperar pagamento pendente:", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calculoId, qrCodeUrl]);
 
   // Polling automático para verificar pagamento
   useEffect(() => {
@@ -46,12 +100,12 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
 
         if (data.paid) {
           clearInterval(pollingInterval);
-          toast({
-            title: "Pagamento confirmado! ✅",
-            description: "Redirecionando para sua análise...",
-          });
-          const transactionId = crypto.randomUUID();
-          navigate(`/pos-pagamento?transaction_id=${transactionId}&payment_id=${chargeId}`);
+          // Vai direto para o relatório; o popup "Pagamento confirmado!" é
+          // exibido lá quando a URL traz `?paid=1`.
+          const params = new URLSearchParams();
+          if (calculoId) params.set('id', calculoId);
+          params.set('paid', '1');
+          navigate(`/relatorio?${params.toString()}`);
         }
       } catch (error) {
         console.error("Erro no polling de pagamento:", error);
@@ -66,25 +120,42 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
     };
   }, [qrCodeUrl, chargeId, calculoId, isVerifying, navigate, toast]);
 
-  const generatePix = useCallback(async (email: string) => {
+  const generatePix = useCallback(async (email: string, userName?: string) => {
     setIsLoading(true);
     setLoadingStep(1);
 
     const emailTrimmed = email.trim().toLowerCase();
-    const BYPASS_EMAIL = 'jpabreupontes@gmail.com';
-    const amount = emailTrimmed === BYPASS_EMAIL ? 1 : 1690;
+    const BYPASS_EMAIL = "jpabreupontes@gmail.com";
+    // TEMP TEST: todos os pagamentos a R$ 0,01 (reverter para: emailTrimmed === BYPASS_EMAIL ? 1 : 1690)
+    void emailTrimmed;
+    void BYPASS_EMAIL;
+    const amount = 1;
 
     setTimeout(() => setLoadingStep(2), 800);
     setTimeout(() => setLoadingStep(3), 2500);
 
     try {
-      const { data, error } = await supabase.functions.invoke("create-pix-v2", {
+      if (!calculoId) {
+        console.warn("[usePixPayment] generatePix chamado sem calculoId. initialCalculoId:", initialCalculoId);
+        toast({
+          title: "Aguarde",
+          description: "Estamos salvando seu cálculo. Tente novamente em alguns segundos.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      console.log("[usePixPayment] gerando PIX com calculoId:", calculoId);
+
+      const quizSessionId = searchParams.get("qid") || searchParams.get("id") || undefined;
+
+      const { data, error } = await supabase.functions.invoke("create-pix", {
         body: {
+          calculoId,
+          quizSessionId,
           amount,
           email: emailTrimmed,
-          calculoId: calculoId || undefined,
-          formulario: calculoId ? undefined : formData,
-          valorBase: calculoId ? undefined : valorBase,
+          nome: userName,
         },
       });
 
@@ -105,22 +176,8 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
         setQrCode(data.qrCode);
         setQrCodeUrl(data.qrCodeUrl);
         setChargeId(data.chargeId);
-        sessionStorage.setItem("rescisao-pix-code", data.qrCode);
-
-        if (data.calculoId) {
-          setCalculoId(data.calculoId);
-          sessionStorage.setItem("rescisao-calculo-id", data.calculoId);
-        }
-        if (data.codigoUnico) {
-          setCodigoUnico(data.codigoUnico);
-          sessionStorage.setItem("rescisao-codigo-unico", data.codigoUnico);
-        }
-        if (valorBase) {
-          sessionStorage.setItem("rescisao-valor-base-original", String(valorBase));
-        }
-        sessionStorage.setItem("rescisao-charge-id", data.chargeId);
-        sessionStorage.setItem("rescisao-session-active", "true");
-        sessionStorage.setItem("rescisao-email", emailTrimmed);
+        if (data.calculoId) setCalculoId(data.calculoId);
+        if (data.codigoUnico) setCodigoUnico(data.codigoUnico);
         return true;
       } else {
         toast({
@@ -130,14 +187,11 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
         });
         return false;
       }
-    } catch (error: unknown) {
-      console.error("Erro ao gerar PIX:", error);
-      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+    } catch (err) {
+      console.error("[usePixPayment] erro:", err);
       toast({
-        title: "Erro ao gerar PIX",
-        description: errorMessage.includes("fetch")
-          ? "Erro de conexão. Verifique sua internet."
-          : "Tente novamente em alguns instantes.",
+        title: "Erro ao processar pagamento",
+        description: err instanceof Error ? err.message : "Erro inesperado",
         variant: "destructive",
       });
       return false;
@@ -145,64 +199,43 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
       setIsLoading(false);
       setLoadingStep(0);
     }
-  }, [calculoId, formData, valorBase, toast]);
+  }, [calculoId, searchParams, toast]);
 
   const verifyPayment = useCallback(async () => {
+    if (!chargeId || isVerifying) return;
     setIsVerifying(true);
+
     try {
       const { data, error } = await supabase.functions.invoke("verificar-pix", {
         body: { chargeId, calculoId },
       });
 
-      if (error) throw error;
+      if (error) throw new Error(error.message);
 
       if (data.paid) {
-        toast({
-          title: "Pagamento confirmado! ✅",
-          description: "Redirecionando para sua análise...",
-        });
-        const transactionId = crypto.randomUUID();
-        navigate(`/pos-pagamento?transaction_id=${transactionId}&payment_id=${chargeId}`);
-        return true;
+        const params = new URLSearchParams();
+        if (calculoId) params.set('id', calculoId);
+        params.set('paid', '1');
+        navigate(`/relatorio?${params.toString()}`);
       } else {
         toast({
-          title: "Pagamento não identificado",
-          description: "Aguarde alguns segundos após o pagamento e tente novamente.",
-          variant: "destructive",
+          title: "Pagamento ainda não confirmado",
+          description: "Aguarde alguns instantes e tente novamente.",
         });
-        return false;
       }
-    } catch (error) {
-      console.error("Erro ao verificar pagamento:", error);
-      toast({
-        title: "Erro ao verificar",
-        description: "Tente novamente em alguns instantes.",
-        variant: "destructive",
-      });
-      return false;
+    } catch (err) {
+      console.error("[usePixPayment] verifyPayment erro:", err);
     } finally {
       setIsVerifying(false);
     }
-  }, [chargeId, calculoId, navigate, toast]);
+  }, [chargeId, calculoId, isVerifying, navigate, toast]);
 
-  const copyCode = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(qrCode);
-      setCopied(true);
-      toast({
-        title: "Código copiado!",
-        description: "Cole no app do seu banco para pagar.",
-        duration: 2500,
-      });
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      toast({
-        title: "Erro ao copiar",
-        description: "Tente copiar manualmente.",
-        variant: "destructive",
-      });
-    }
-  }, [qrCode, toast]);
+  const copyCode = useCallback(() => {
+    if (!qrCode) return;
+    navigator.clipboard.writeText(qrCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  }, [qrCode]);
 
   return {
     isLoading,
@@ -211,13 +244,15 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
     qrCodeUrl,
     chargeId,
     calculoId,
-    setCalculoId,
     codigoUnico,
-    setCodigoUnico,
-    isVerifying,
     copied,
+    isVerifying,
+    recoveredName,
+    recoveredEmail,
     generatePix,
     verifyPayment,
     copyCode,
+    setCalculoId,
+    setCodigoUnico,
   };
 }

@@ -1,34 +1,37 @@
 import { QuizQuestion } from "./types";
 
+// ============================================================================
+// QUIZ ESTRUTURADO EM 2 BLOCOS:
+//
+// 1) ESSENCIAL (8 perguntas) — todo mundo responde, gera cálculo básico das
+//    verbas rescisórias (saldo, aviso, 13º, férias, FGTS, multa, INSS, IRRF).
+//
+// 2) EXTRAS (5 a 12 perguntas, condicionais) — oferecido APÓS o resultado
+//    básico, com CTA "Descubra valores extras". Aciona os módulos de
+//    oportunidade (horas extras, adicionais, desvio função, valor por fora).
+//
+// A copy se adapta a `situacaoAtual`:
+//   - 'pensando' usa `perguntaPensando` / `opcoesPensando` (tempo presente,
+//     hipotético).
+//   - 'demitido_aviso' e 'ja_saiu' usam a versão padrão (tempo passado/presente
+//     real).
+// ============================================================================
+
 export const QUIZ_QUESTIONS: QuizQuestion[] = [
-  // ETAPA 1 - SITUAÇÃO
-  {
-    id: "objetivo",
-    pergunta: "O que você está buscando?",
-    subtexto: "Selecione para personalizarmos a sua análise.",
-    tipo: "single",
-    campo: "objetivo",
-    etapa: 1,
-    opcoes: [
-      {
-        value: "simular",
-        label: "Simular o valor que devo receber",
-        sublabel: "Quero saber quanto teria direito se sair da empresa",
-      },
-      {
-        value: "conferir",
-        label: "Conferir se o cálculo da empresa está correto",
-        sublabel: "Quero verificar se os valores estão certos",
-      },
-    ],
-  },
+
+  // ============================================================================
+  // BLOCO ESSENCIAL — 8 perguntas
+  // ============================================================================
+
+  // 1. Situação atual — sempre primeira pergunta, define copy do resto
   {
     id: "situacao-atual",
-    pergunta: "Qual é sua situação atual?",
-    subtexto: "Selecione a opção que melhor descreve seu momento.",
+    pergunta: "Qual é a sua situação hoje?",
+    subtexto: "A gente adapta as próximas perguntas conforme a sua resposta.",
     tipo: "single",
     campo: "situacaoAtual",
     etapa: 1,
+    bloco: "essencial",
     opcoes: [
       {
         value: "ja_saiu",
@@ -38,27 +41,28 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       {
         value: "demitido_aviso",
         label: "Estou cumprindo aviso prévio",
-        sublabel: "Fui demitido ou pedi demissão e estou no período de aviso",
+        sublabel: "Fui demitido ou pedi demissão e estou no aviso",
       },
       {
         value: "pensando",
-        label: "Estou pensando em deixar o emprego",
-        sublabel: "Ainda não tomei a decisão final",
+        label: "Estou pensando em sair",
+        sublabel: "Ainda não tomei a decisão",
       },
     ],
   },
+
+  // 2. Tipo de desligamento (real) — para quem já saiu ou está no aviso
   {
     id: "tipo-desligamento",
-    pergunta: "Como foi sua saída da empresa?",
-    subtexto: "Cada tipo tem regras diferentes. Escolha o que mais se parece com o seu caso.",
+    pergunta: "Como foi a sua saída da empresa?",
+    subtexto: "Cada tipo tem regras diferentes. Escolha o que mais combina com o seu caso.",
     tipo: "single",
     campo: "tipoDesligamento",
     etapa: 1,
-    condicional: (formData) => {
-      return formData.situacaoAtual !== "pensando";
-    },
+    bloco: "essencial",
+    condicional: (formData) => formData.situacaoAtual !== "pensando",
     opcoesCondicional: (formData) => {
-      const isAvisoPrevio = formData.situacaoAtual === "demitido_aviso" || formData.situacaoAtual === "pediu_aviso";
+      const noAviso = formData.situacaoAtual === "demitido_aviso";
       const todas = [
         {
           value: "demissao_sem_justa_causa",
@@ -68,7 +72,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
         {
           value: "pedido_demissao",
           label: "Pedi pra sair",
-          sublabel: "Eu decidi sair da empresa, foi minha vontade",
+          sublabel: "Eu decidi sair da empresa por vontade própria",
         },
         {
           value: "acordo",
@@ -83,45 +87,49 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
         {
           value: "termino_contrato",
           label: "Acabou o contrato com prazo",
-          sublabel: "Era contrato de experiência ou prazo determinado e chegou ao fim",
+          sublabel: "Era contrato de experiência ou prazo determinado",
         },
       ];
-      return isAvisoPrevio ? todas.filter((o) => o.value !== "justa_causa") : todas;
+      // Quem está no aviso prévio não está em justa causa
+      return noAviso ? todas.filter((o) => o.value !== "justa_causa") : todas;
     },
   },
+
+  // 2-bis. Tipo de desligamento (hipotético) — para quem está pensando
   {
     id: "tipo-desligamento-pensando",
     pergunta: "Se você sair hoje, qual seria a forma mais provável?",
-    subtexto: "Selecione a opção para simularmos seus direitos.",
+    subtexto: "A gente simula seus direitos pra essa hipótese.",
     tipo: "single",
     campo: "tipoDesligamento",
     etapa: 1,
-    condicional: (formData) => {
-      return formData.situacaoAtual === "pensando";
-    },
+    bloco: "essencial",
+    condicional: (formData) => formData.situacaoAtual === "pensando",
     opcoes: [
       {
         value: "pedido_demissao",
-        label: "Pedido de demissão",
-        sublabel: "Pedir para sair por vontade própria",
+        label: "Pedir demissão",
+        sublabel: "Sair por vontade própria",
       },
       {
         value: "acordo",
         label: "Tentar um acordo",
-        sublabel: "Negociar uma saída consensual com a empresa",
+        sublabel: "Negociar a saída de comum acordo com a empresa",
       },
       {
         value: "demissao_sem_justa_causa",
-        label: "Aguardar possível demissão",
-        sublabel: "Esperar que a empresa tome a iniciativa",
+        label: "Aguardar uma demissão",
+        sublabel: "Esperar a empresa tomar a iniciativa",
       },
       {
         value: "nao_sei",
         label: "Ainda não sei",
-        sublabel: "Quero entender melhor meus direitos antes de decidir",
+        sublabel: "Quero entender meus direitos antes de decidir",
       },
     ],
   },
+
+  // 3. Datas
   {
     id: "periodo-contrato",
     pergunta: "Quando você entrou e quando saiu?",
@@ -131,28 +139,41 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "input-date-range",
     campo: "periodoContrato",
     etapa: 1,
+    bloco: "essencial",
   },
+
+  // 4. Salário
   {
     id: "salario-bruto",
     pergunta: "Quanto você recebia por mês?",
-    subtexto:
-      "Inclua seu salário fixo + a média de comissões e bônus.",
+    subtexto: "Inclua seu salário fixo + a média de comissões e bônus.",
     perguntaPensando: "Quanto você recebe por mês?",
-    subtextoPensando:
-      "Inclua seu salário fixo + a média de comissões e bônus.",
+    subtextoPensando: "Inclua seu salário fixo + a média de comissões e bônus.",
     tipo: "input-currency",
     campo: "salarioFixo",
     etapa: 1,
+    bloco: "essencial",
   },
 
-  // ETAPA 2 - CONTRATO
+  // 5. Aviso prévio (real) — para quem já saiu (não é justa causa nem fim de contrato)
   {
     id: "tipo-aviso-previo",
     pergunta: "Como foi o seu aviso prévio?",
-    subtexto: "É o período entre saber da demissão e sair de fato. Escolha o que aconteceu com você.",
+    subtexto: "É o período entre saber da demissão e sair de fato.",
     tipo: "single",
     campo: "tipoAvisoPrevio",
     etapa: 2,
+    bloco: "essencial",
+    condicional: (formData) => {
+      const tipo = formData.tipoDesligamento as string;
+      return (
+        formData.situacaoAtual !== "pensando" &&
+        formData.situacaoAtual !== "demitido_aviso" &&
+        tipo !== "justa_causa" &&
+        tipo !== "termino_contrato" &&
+        tipo !== "nao_sei"
+      );
+    },
     opcoes: [
       {
         value: "indenizado",
@@ -167,37 +188,31 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       {
         value: "nao_cumprido",
         label: "Saí sem cumprir",
-        sublabel: "Pedi pra sair e não trabalhei os 30 dias de aviso",
+        sublabel: "Pedi pra sair e não trabalhei os 30 dias",
       },
       {
         value: "nao_se_aplica",
         label: "Não tenho aviso prévio",
-        sublabel: "Ex: justa causa, fim de contrato ou ainda não saí",
+        sublabel: "Ex: justa causa ou fim de contrato",
       },
     ],
-    condicional: (formData) => {
-      const tipo = formData.tipoDesligamento as string;
-      return (
-        formData.situacaoAtual !== "pensando" &&
-        formData.situacaoAtual !== "demitido_aviso" &&
-        tipo !== "justa_causa" &&
-        tipo !== "termino_contrato" &&
-        tipo !== "nao_sei"
-      );
-    },
   },
+
+  // 5-bis. Aviso prévio (hipotético) — para quem está pensando
   {
     id: "tipo-aviso-previo-pensando",
-    pergunta: "Caso você peça demissão, pretende cumprir os 30 dias de aviso prévio?",
-    subtexto: "Isso influencia no valor final da sua rescisão.",
+    pergunta: "Se pedir demissão, pretende cumprir o aviso de 30 dias?",
+    subtexto: "Isso muda o valor final da sua rescisão.",
     tipo: "single",
     campo: "tipoAvisoPrevio",
     etapa: 2,
+    bloco: "essencial",
+    condicional: (formData) => formData.situacaoAtual === "pensando" && formData.tipoDesligamento !== "nao_sei",
     opcoes: [
       {
         value: "trabalhado",
         label: "Sim, trabalharia normalmente",
-        sublabel: "Cumpriria os 30 dias trabalhando na empresa",
+        sublabel: "Cumpriria os 30 dias na empresa",
       },
       {
         value: "nao_cumprido",
@@ -207,46 +222,27 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       {
         value: "nao_se_aplica",
         label: "Ainda não sei",
-        sublabel: "Quero entender melhor antes de decidir",
+        sublabel: "Quero entender antes de decidir",
       },
     ],
-    condicional: (formData) => {
-      return formData.situacaoAtual === "pensando" && formData.tipoDesligamento !== "nao_sei";
-    },
-  },
-  {
-    id: "dependentes",
-    pergunta: "Quantos dependentes você declara no Imposto de Renda?",
-    subtexto:
-      "Filhos menores de 21 anos (ou até 24 se cursando faculdade), cônjuge sem renda, pais que dependem de você. **Se não tem nenhum, deixe 0.**",
-    tipo: "input-number",
-    campo: "numDependentes",
-    etapa: 2,
-  },
-  {
-    id: "saldo-fgts",
-    pergunta: "Você sabe o saldo do seu FGTS?",
-    subtexto: "Se souber, ajuda a deixar a conta mais precisa. Pode olhar no app FGTS ou Caixa.",
-    subtextoDestaque: "Se não souber, pulamos isso. A gente estima pelo seu tempo de empresa.",
-    tipo: "input-currency",
-    campo: "saldoFGTS",
-    etapa: 2,
-    opcional: true,
   },
 
-  // ETAPA 3 - BENEFÍCIOS
+  // 6. Férias vencidas
   {
     id: "ferias-vencidas",
     pergunta: "Você tirou todas as férias que tinha direito?",
     subtexto: "Cada 12 meses trabalhados, a empresa precisa te dar férias. Se passou disso sem tirar, vira valor a receber.",
+    perguntaPensando: "Você tirou todas as férias que tem direito até hoje?",
+    subtextoPensando: "Cada 12 meses trabalhados, a empresa precisa te dar férias. Se passou disso sem tirar, vira valor a receber.",
     tipo: "single",
     campo: "periodosFeriasVencidas",
     etapa: 3,
+    bloco: "essencial",
     opcoes: [
       {
         value: "0",
         label: "Sim, tirei tudo em dia",
-        sublabel: "Tirei férias no prazo de cada 12 meses trabalhados",
+        sublabel: "Tirei férias dentro do prazo de cada 12 meses",
       },
       {
         value: "1",
@@ -265,19 +261,38 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       },
     ],
   },
+
+  // 7. Dependentes IR
   {
-    id: "meses-ferias",
-    pergunta: "Quando foram suas últimas férias?",
-    subtexto: "Selecione o mês e ano. Se não lembrar exato, vai numa data aproximada.",
-    tipo: "input-month",
-    campo: "mesesDesdeUltimaFerias",
-    etapa: 3,
-    condicional: (formData) => {
-      return formData.periodosFeriasVencidas !== "nunca";
-    },
+    id: "dependentes",
+    pergunta: "Quantos dependentes você declara no Imposto de Renda?",
+    subtexto: "Filhos menores de 21 anos (ou até 24 se cursando faculdade), cônjuge sem renda, pais que dependem de você. **Se não tem nenhum, deixe 0.**",
+    tipo: "input-number",
+    campo: "numDependentes",
+    etapa: 2,
+    bloco: "essencial",
   },
 
-  // ETAPA 4 - ANÁLISE DE OPORTUNIDADE
+  // 8. FGTS (opcional)
+  {
+    id: "saldo-fgts",
+    pergunta: "Você sabe o saldo do seu FGTS?",
+    subtexto: "Se souber, ajuda a deixar a conta mais precisa. Pode olhar no app FGTS ou Caixa.",
+    subtextoDestaque: "Se não souber, pulamos isso. A gente estima pelo seu tempo de empresa.",
+    tipo: "input-currency",
+    campo: "saldoFGTS",
+    etapa: 2,
+    bloco: "essencial",
+    opcional: true,
+  },
+
+  // ============================================================================
+  // BLOCO EXTRAS — perguntas condicionais que aumentam o valor da rescisão
+  // Apresentadas APÓS o usuário ver o resultado básico, em uma tela CTA
+  // "Descubra valores extras que você pode ter a receber".
+  // ============================================================================
+
+  // E1. Horas extras
   {
     id: "horas-extras",
     pergunta: "Quantas horas extras você fazia por mês, em média?",
@@ -287,6 +302,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "faziaHorasExtras",
     etapa: 4,
+    bloco: "extras",
     opcoes: [
       { value: "nao_fazia", label: "Nenhuma", sublabel: "Sempre saía no horário" },
       { value: "vez_em_quando", label: "Até 10h por mês", sublabel: "Cerca de 2-3h por semana" },
@@ -301,73 +317,43 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     ],
   },
 
-  // --- Perguntas condicionais de JORNADA (se faz horas extras) ---
+  // E2. Banco de horas (se fazia hora extra)
   {
     id: "banco-horas",
-    pergunta: "A empresa utilizava banco de horas?",
-    subtexto: "Banco de horas pode compensar horas extras trabalhadas.",
-    perguntaPensando: "A empresa utiliza banco de horas?",
-    subtextoPensando: "Banco de horas pode compensar horas extras trabalhadas.",
+    pergunta: "A empresa tinha banco de horas?",
+    subtexto: "Banco de horas é quando a hora extra é trocada por folga em vez de paga em dinheiro.",
+    perguntaPensando: "A empresa tem banco de horas?",
+    subtextoPensando: "Banco de horas é quando a hora extra é trocada por folga em vez de paga em dinheiro.",
     tipo: "single",
     campo: "bancoHoras",
     etapa: 4,
+    bloco: "extras",
     condicional: (formData) => {
       return formData.faziaHorasExtras !== "nao_fazia" && !!formData.faziaHorasExtras;
     },
     opcoes: [
       { value: "sim", label: "Sim", sublabel: "As horas extras eram compensadas com folgas" },
-      { value: "nao", label: "Não", sublabel: "As horas extras deveriam ser pagas" },
-      { value: "nao_sei", label: "Não sei", sublabel: "Não tenho certeza se havia banco de horas" },
+      { value: "nao", label: "Não", sublabel: "As horas extras deveriam ser pagas em dinheiro" },
+      { value: "nao_sei", label: "Não sei", sublabel: "Quero que vocês confiram" },
     ],
     opcoesPensando: [
-      { value: "sim", label: "Sim", sublabel: "Minhas horas extras são compensadas com folgas, não pagas em dinheiro" },
-      { value: "nao", label: "Não", sublabel: "Não tenho banco de horas. Minhas horas extras devem ser pagas em dinheiro" },
-      { value: "nao_sei", label: "Não sei", sublabel: "Não tenho certeza se há banco de horas na empresa" },
-    ],
-  },
-  {
-    id: "controle-ponto",
-    pergunta: "A empresa tinha controle de ponto?",
-    subtexto: "Informe como era o registro de horários.",
-    perguntaPensando: "A empresa tem controle de ponto?",
-    subtextoPensando: "Informe como é o registro de horários.",
-    tipo: "single",
-    campo: "controlePonto",
-    etapa: 4,
-    condicional: (formData) => {
-      return formData.faziaHorasExtras !== "nao_fazia" && !!formData.faziaHorasExtras;
-    },
-    opcoes: [
-      {
-        value: "sim",
-        label: "Sim, registrava corretamente",
-        sublabel: "Ponto eletrônico ou manual fiel ao horário real",
-      },
-      { value: "parcial", label: "Parcial ou manipulado", sublabel: "O registro não refletia as horas reais" },
-      { value: "nao", label: "Não tinha", sublabel: "Sem registro formal de horários" },
-    ],
-    opcoesPensando: [
-      {
-        value: "sim",
-        label: "Sim, registra corretamente",
-        sublabel: "Ponto eletrônico ou manual fiel ao horário real",
-      },
-      { value: "parcial", label: "Parcial ou manipulado", sublabel: "O registro não reflete as horas reais" },
-      { value: "nao", label: "Não tem", sublabel: "Sem registro formal de horários" },
+      { value: "sim", label: "Sim", sublabel: "As horas extras são compensadas com folgas" },
+      { value: "nao", label: "Não", sublabel: "As horas extras devem ser pagas em dinheiro" },
+      { value: "nao_sei", label: "Não sei", sublabel: "Quero que vocês confiram" },
     ],
   },
 
-  // --- Pergunta de desvio de função (sim/não/não sei) ---
+  // E3. Desvio de função
   {
     id: "funcoes-diferentes",
     pergunta: "Você fazia tarefas de um cargo acima do seu?",
     subtexto: "Por exemplo: registrado como auxiliar mas fazendo trabalho de analista. Isso é desvio de função e a CLT cobre.",
     perguntaPensando: "Você faz tarefas de um cargo acima do seu?",
-    subtextoPensando:
-      "Por exemplo: registrado como auxiliar mas fazendo trabalho de analista. Isso é desvio de função e a CLT cobre.",
+    subtextoPensando: "Por exemplo: registrado como auxiliar mas fazendo trabalho de analista. Isso é desvio de função e a CLT cobre.",
     tipo: "single",
     campo: "funcoesDiferentes",
     etapa: 4,
+    bloco: "extras",
     opcoes: [
       { value: "sim", label: "Sim, com certeza", sublabel: "Fazia tarefas de cargo superior ao registrado" },
       { value: "nao", label: "Não, fazia o do meu cargo", sublabel: "As tarefas eram compatíveis com o que está na carteira" },
@@ -380,59 +366,43 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     ],
   },
 
-  // --- Pergunta original de valor por fora ---
+  // E4. Valor por fora
   {
     id: "valor-por-fora",
-    pergunta: 'Você recebia algum valor por fora do salário registrado?',
+    pergunta: "Você recebia algum valor por fora do salário registrado?",
     subtexto: "Por exemplo: PIX da empresa, dinheiro na mão, depósito de outra pessoa. **Sem julgamento.** A gente pergunta porque isso entra na conta de férias, 13º e FGTS.",
-    perguntaPensando: 'Você recebe algum valor por fora do salário registrado?',
+    perguntaPensando: "Você recebe algum valor por fora do salário registrado?",
     subtextoPensando: "Por exemplo: PIX da empresa, dinheiro na mão, depósito de outra pessoa. **Sem julgamento.** A gente pergunta porque isso entra na conta de férias, 13º e FGTS.",
     tipo: "single",
     campo: "valorPorFora",
     etapa: 4,
+    bloco: "extras",
     opcoes: [
-      {
-        value: "nao",
-        label: "Não, tudo era registrado",
-        sublabel: "O que recebia estava na carteira de trabalho",
-      },
-      {
-        value: "sim",
-        label: "Sim, recebia parte por fora",
-        sublabel: "Parte do salário vinha em dinheiro ou PIX sem registro",
-      },
+      { value: "nao", label: "Não, tudo era registrado", sublabel: "O que recebia estava na carteira de trabalho" },
+      { value: "sim", label: "Sim, recebia parte por fora", sublabel: "Parte do salário vinha em dinheiro ou PIX sem registro" },
     ],
     opcoesPensando: [
-      {
-        value: "nao",
-        label: "Não, tudo é registrado",
-        sublabel: "O que recebo está na carteira de trabalho",
-      },
-      {
-        value: "sim",
-        label: "Sim, recebo parte por fora",
-        sublabel: "Parte do salário vem em dinheiro ou PIX sem registro",
-      },
+      { value: "nao", label: "Não, tudo é registrado", sublabel: "O que recebo está na carteira de trabalho" },
+      { value: "sim", label: "Sim, recebo parte por fora", sublabel: "Parte do salário vem em dinheiro ou PIX sem registro" },
     ],
   },
 
-  // --- Pergunta condicional: valor por fora mensal ---
+  // E5. Valor por fora mensal (se recebia)
   {
     id: "valor-por-fora-mensal",
-    pergunta: 'Mais ou menos quanto por mês?',
+    pergunta: "Mais ou menos quanto por mês?",
     subtexto: "Pode colocar uma média aproximada. Esse valor deveria estar entrando na base de FGTS, 13º e férias.",
-    perguntaPensando: 'Mais ou menos quanto por mês?',
+    perguntaPensando: "Mais ou menos quanto por mês?",
     subtextoPensando: "Pode colocar uma média aproximada. Esse valor deveria estar entrando na base de FGTS, 13º e férias.",
     tipo: "input-currency",
     campo: "valorPorForaMensal",
     etapa: 4,
+    bloco: "extras",
     opcional: true,
-    condicional: (formData) => {
-      return formData.valorPorFora === "sim";
-    },
+    condicional: (formData) => formData.valorPorFora === "sim",
   },
 
-  // --- Pergunta original de adicionais ---
+  // E6. Adicionais (multi-select)
   {
     id: "adicionais",
     pergunta: "Marque tudo que se aplica ao seu trabalho:",
@@ -442,6 +412,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "multi",
     campo: "adicionaisTrabalho",
     etapa: 4,
+    bloco: "extras",
     opcoes: [
       { value: "trabalho_noturno", label: "Trabalhava à noite (depois das 22h)", sublabel: "Adicional noturno: +20% sobre a hora normal" },
       { value: "insalubridade", label: "Local insalubre (calor, ruído, químicos, etc.)", sublabel: "Adicional de insalubridade: +10% a 40%" },
@@ -456,7 +427,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     ],
   },
 
-  // --- Perguntas condicionais de ADICIONAIS ---
+  // E7. Noturno recebia corretamente?
   {
     id: "noturno-recebia",
     pergunta: "Você recebia adicional noturno corretamente?",
@@ -466,6 +437,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "recebiaAdicionalNoturno",
     etapa: 4,
+    bloco: "extras",
     condicional: (formData) => {
       const adicionais = formData.adicionaisTrabalho as string[] | undefined;
       return Array.isArray(adicionais) && adicionais.includes("trabalho_noturno");
@@ -481,6 +453,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       { value: "nao_sei", label: "Não sei" },
     ],
   },
+
+  // E8. Horas noturnas semanais (só se não recebia certo)
   {
     id: "noturno-horas",
     pergunta: "Quantas horas noturnas você trabalhava por semana?",
@@ -490,6 +464,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "horasNoturnasSemana",
     etapa: 4,
+    bloco: "extras",
     condicional: (formData) => {
       const adicionais = formData.adicionaisTrabalho as string[] | undefined;
       return (
@@ -505,6 +480,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       { value: "mais_30", label: "Mais de 30 horas/semana" },
     ],
   },
+
+  // E9. Grau de insalubridade (se marcou)
   {
     id: "insalubridade-grau",
     pergunta: "Qual o grau de insalubridade do seu trabalho?",
@@ -512,6 +489,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "grauInsalubridade",
     etapa: 4,
+    bloco: "extras",
     condicional: (formData) => {
       const adicionais = formData.adicionaisTrabalho as string[] | undefined;
       return Array.isArray(adicionais) && adicionais.includes("insalubridade");
@@ -523,6 +501,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       { value: "nao_sei", label: "Não sei", sublabel: "Quero que seja verificado" },
     ],
   },
+
+  // E10. Insalubridade recebia corretamente?
   {
     id: "insalubridade-recebia",
     pergunta: "Você recebia adicional de insalubridade corretamente?",
@@ -532,6 +512,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "recebiaInsalubridade",
     etapa: 4,
+    bloco: "extras",
     condicional: (formData) => {
       const adicionais = formData.adicionaisTrabalho as string[] | undefined;
       return Array.isArray(adicionais) && adicionais.includes("insalubridade");
@@ -547,6 +528,8 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
       { value: "nao_sei", label: "Não sei" },
     ],
   },
+
+  // E11. Periculosidade recebia corretamente?
   {
     id: "periculosidade-recebia",
     pergunta: "Você recebia adicional de periculosidade corretamente?",
@@ -556,6 +539,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "recebiaPericulosidade",
     etapa: 4,
+    bloco: "extras",
     condicional: (formData) => {
       const adicionais = formData.adicionaisTrabalho as string[] | undefined;
       return Array.isArray(adicionais) && adicionais.includes("periculosidade");
@@ -572,7 +556,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     ],
   },
 
-  // --- Pergunta final ---
+  // E12. Pergunta final (motivacional)
   {
     id: "erro-rescisao",
     pergunta: "Pra fechar: o que mais te preocupa nessa rescisão?",
@@ -582,69 +566,62 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     tipo: "single",
     campo: "erroNaRescisao",
     etapa: 4,
+    bloco: "extras",
     progressoFixo: 99,
     opcoes: [
-      {
-        value: "sim",
-        label: "Garantir que recebi tudo que tenho direito",
-        sublabel: "Quero conferir cada verba com calma",
-      },
-      {
-        value: "talvez",
-        label: "Saber se algum valor ficou de fora",
-        sublabel: "Horas extras, adicionais, desvio de função",
-      },
-      {
-        value: "nao",
-        label: "Entender o que fazer antes de assinar",
-        sublabel: "Quero ir pro RH com os números na mão",
-      },
-      {
-        value: "nao_sei_avaliar",
-        label: "Só quero entender meus direitos",
-        sublabel: "Não tenho certeza do que cobrar nem como",
-      },
+      { value: "sim", label: "Garantir que recebi tudo que tenho direito", sublabel: "Quero conferir cada verba com calma" },
+      { value: "talvez", label: "Saber se algum valor ficou de fora", sublabel: "Horas extras, adicionais, desvio de função" },
+      { value: "nao", label: "Entender o que fazer antes de assinar", sublabel: "Quero ir pro RH com os números na mão" },
+      { value: "nao_sei_avaliar", label: "Só quero entender meus direitos", sublabel: "Não tenho certeza do que cobrar nem como" },
     ],
     opcoesPensando: [
-      {
-        value: "sim",
-        label: "Saber quanto eu teria direito a receber",
-        sublabel: "Quero ver o valor antes de tomar decisão",
-      },
-      {
-        value: "talvez",
-        label: "Comparar os tipos de saída",
-        sublabel: "Ver o que pesa mais: pedir, acordo ou esperar",
-      },
-      {
-        value: "nao",
-        label: "Saber o que pode estar faltando",
-        sublabel: "Horas extras, adicionais, desvio de função",
-      },
-      {
-        value: "nao_sei_avaliar",
-        label: "Só quero entender meus direitos",
-        sublabel: "Não tenho certeza do que pedir nem como",
-      },
+      { value: "sim", label: "Saber quanto eu teria direito a receber", sublabel: "Quero ver o valor antes de tomar decisão" },
+      { value: "talvez", label: "Comparar os tipos de saída", sublabel: "Ver o que pesa mais: pedir, acordo ou esperar" },
+      { value: "nao", label: "Saber o que pode estar faltando", sublabel: "Horas extras, adicionais, desvio de função" },
+      { value: "nao_sei_avaliar", label: "Só quero entender meus direitos", sublabel: "Não tenho certeza do que pedir nem como" },
     ],
   },
 ];
 
-// Função para obter perguntas filtradas baseadas nas respostas
-export function getActiveQuestions(formData: Record<string, unknown>): QuizQuestion[] {
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Retorna as perguntas ativas filtradas pelo bloco e pelas condicionais.
+ *
+ * - Padrão (`mode: 'essencial'`): só o bloco essencial.
+ * - `mode: 'extras'`: APENAS o bloco extras (não inclui essencial).
+ *   Útil quando o usuário já completou o essencial e está retornando para
+ *   responder as perguntas opcionais via /quiz/extras-intro.
+ * - `mode: 'todas'`: essencial + extras (compatibilidade para callers que
+ *   precisam ver o quiz completo, ex.: páginas que iteram para mostrar respostas).
+ */
+export type QuizMode = 'essencial' | 'extras' | 'todas';
+
+export function getActiveQuestions(
+  formData: Record<string, unknown>,
+  options: { mode?: QuizMode; incluirExtras?: boolean } = {},
+): QuizQuestion[] {
+  // Suporte ao parâmetro legado `incluirExtras`: true → 'todas', false → 'essencial'
+  const mode: QuizMode =
+    options.mode ?? (options.incluirExtras ? 'todas' : 'essencial');
+
   return QUIZ_QUESTIONS.filter((q) => {
+    if (mode === 'essencial' && q.bloco !== 'essencial') return false;
+    if (mode === 'extras' && q.bloco !== 'extras') return false;
     if (!q.condicional) return true;
     return q.condicional(formData);
   });
 }
 
-// Obter etapa atual baseada no índice da pergunta
+/** Obter etapa atual baseada no índice da pergunta */
 export function getCurrentEtapa(questionIndex: number, questions: QuizQuestion[]): number {
   if (questionIndex >= questions.length) return 4;
   return questions[questionIndex]?.etapa || 1;
 }
 
-// Obter total de etapas
+/** Obter total de etapas */
 export function getTotalEtapas(): number {
   return 4;
 }

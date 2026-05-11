@@ -8,6 +8,8 @@ export interface QuizOption {
   sublabel?: string;
 }
 
+export type QuizBloco = 'essencial' | 'extras';
+
 export interface QuizQuestion {
   id: string;
   pergunta: string;
@@ -21,6 +23,7 @@ export interface QuizQuestion {
   opcoesPensando?: QuizOption[]; // Opções em tempo presente para quem está "pensando em sair"
   campo: string;
   etapa: number;
+  bloco: QuizBloco; // 'essencial' = sempre pergunta, 'extras' = só após resultado básico
   condicional?: (formData: Record<string, unknown>) => boolean;
   opcional?: boolean;
   progressoFixo?: number;

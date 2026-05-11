@@ -1,111 +1,71 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Clock, Shuffle, AlertTriangle, Plus, CheckCircle2, Timer } from "lucide-react";
-import { AdBanner } from "@/components/AdBanner";
+import { ArrowRight, Check, Clock } from "lucide-react";
 
 interface QuizIntermediateScreenProps {
   onContinue: () => void;
 }
-
-const ITEMS = [
-  {
-    icon: Clock,
-    title: "Horas extras não pagas",
-    desc: "Até 30 minutos a mais por dia, somados ao longo do contrato, viram milhares de reais.",
-  },
-  {
-    icon: Shuffle,
-    title: "Desvio de função",
-    desc: "Quem faz tarefas de cargo superior ao registrado tem direito a diferença salarial.",
-  },
-  {
-    icon: AlertTriangle,
-    title: "Banco de horas irregular",
-    desc: "Quando a compensação não bate, o saldo vira valor a receber.",
-  },
-  {
-    icon: Plus,
-    title: "Adicionais e outros",
-    desc: "Noturno, insalubridade, periculosidade e verbas que costumam ficar de fora.",
-  },
-];
 
 export function QuizIntermediateScreen({ onContinue }: QuizIntermediateScreenProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
 
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-6 sm:py-10">
-        <div className="w-full max-w-[480px] animate-fade-scale-in">
-          {/* Card único */}
-          <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+      <main className="flex-1 flex items-center justify-center px-4 py-6">
+        <div className="w-full max-w-[460px] animate-fade-scale-in">
 
-            {/* Faixa de progresso no topo */}
-            <div className="bg-success/10 border-b border-success/20 px-5 py-3 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-success flex-shrink-0" />
-              <p className="text-xs sm:text-sm font-semibold text-foreground">
-                Verbas básicas calculadas. Falta a parte que pode pesar mais.
+          <div className="relative bg-card border border-border rounded-3xl shadow-2xl overflow-hidden">
+
+            {/* Glow decorativo */}
+            <div className="absolute -top-24 -right-24 w-56 h-56 bg-primary/15 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+            <div className="absolute -bottom-24 -left-24 w-56 h-56 bg-success/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+
+            <div className="relative px-6 sm:px-8 py-7 sm:py-8 text-center space-y-5">
+
+              {/* Badge de confirmação */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success/10 border border-success/25">
+                <div className="w-4 h-4 rounded-full bg-success flex items-center justify-center flex-shrink-0">
+                  <Check className="w-2.5 h-2.5 text-white" strokeWidth={3.5} />
+                </div>
+                <span className="text-[11px] sm:text-xs font-bold text-success uppercase tracking-wider">
+                  Suas respostas foram salvas
+                </span>
+              </div>
+
+              {/* Headline simples */}
+              <div className="space-y-3">
+                <h2 className="text-2xl sm:text-[28px] font-extrabold text-foreground leading-[1.15] tracking-tight">
+                  Agora, vamos coletar algumas informações que podem{" "}
+                  <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                    aumentar
+                  </span>{" "}
+                  o valor da sua rescisão.
+                </h2>
+                <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+                  São perguntas sobre o seu dia a dia de trabalho: horas extras, adicionais, desvio de função e outros pontos que costumam ficar de fora da conta da empresa, <strong className="text-foreground">e que costumam aumentar bastante o valor da sua rescisão.</strong>
+                </p>
+              </div>
+
+              {/* CTA */}
+              <Button
+                onClick={onContinue}
+                className="w-full h-14 rounded-2xl font-extrabold text-base bg-gradient-to-r from-primary to-primary/90 hover:from-primary/95 hover:to-primary/85 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all"
+              >
+                Continuar
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+
+              {/* Microcopy */}
+              <p className="text-[11px] sm:text-xs text-muted-foreground flex items-center justify-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-primary" />
+                Menos de 1 minuto · 100% gratuito
               </p>
             </div>
-
-            <div className="p-5 sm:p-6 space-y-5">
-              {/* Headline */}
-              <div className="space-y-2 text-center">
-                <h2 className="text-xl sm:text-2xl font-bold text-foreground leading-tight">
-                  Agora vamos ver o que pode <span className="text-primary">aumentar sua rescisão</span>
-                </h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Em <strong className="text-foreground">7 a cada 10 casos</strong> a gente encontra valores ligados à rotina de trabalho que não entraram na conta da empresa.
-                </p>
-              </div>
-
-              {/* Lista compacta */}
-              <ul className="space-y-2">
-                {ITEMS.map((item, i) => {
-                  const Icon = item.icon;
-                  return (
-                    <li
-                      key={i}
-                      className="flex items-start gap-3 p-3 rounded-xl bg-muted/40 border border-border/60"
-                    >
-                      <div className="mt-0.5 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Icon className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-foreground leading-snug">{item.title}</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{item.desc}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {/* CTA + tempo */}
-              <div className="space-y-2.5 pt-1">
-                <Button
-                  onClick={onContinue}
-                  className="w-full h-12 rounded-xl font-semibold bg-primary active:scale-[0.98] text-base"
-                >
-                  Continuar
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
-                  <Timer className="w-3.5 h-3.5 text-primary" />
-                  Leva menos de 1 minuto
-                </p>
-              </div>
-            </div>
           </div>
+
         </div>
       </main>
-
-      {/* AdSense — abaixo da tela intermediária */}
-      <div className="w-full px-4 py-4">
-        <div className="max-w-[480px] mx-auto">
-          <AdBanner slot="6666666666" format="auto" className="" />
-        </div>
-      </div>
 
       <Footer />
     </div>

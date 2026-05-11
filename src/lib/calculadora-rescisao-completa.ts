@@ -109,11 +109,32 @@ function arredondar(valor: number): number {
 }
 
 /**
+ * Faz parsing de uma string de data em horário LOCAL, evitando o bug de
+ * `new Date('2026-05-10')` que cria a data em UTC. Em fusos negativos
+ * (como Brasil -3h), `getDate()` retornaria 09 em vez de 10.
+ *
+ * Aceita formatos:
+ *   - 'YYYY-MM-DD' (ISO date)
+ *   - 'YYYY-MM-DDTHH:MM:SS' (mantém compatibilidade)
+ *   - Outros formatos delega para `new Date(...)`.
+ */
+function parseDate(dateStr: string): Date {
+  if (!dateStr) return new Date(NaN);
+  // ISO date "YYYY-MM-DD" → construir como data local
+  const isoDateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    const [, year, month, day] = isoDateMatch;
+    return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
+  }
+  return new Date(dateStr);
+}
+
+/**
  * Calcula dias trabalhados no mês do desligamento
  */
 function calcularDiasNoMes(dataDesligamento: string): number {
   if (!dataDesligamento) return 15;
-  const data = new Date(dataDesligamento);
+  const data = parseDate(dataDesligamento);
   return data.getDate();
 }
 
@@ -122,18 +143,86 @@ function calcularDiasNoMes(dataDesligamento: string): number {
  */
 function calcularMesesTrabalhados(dataAdmissao: string, dataDesligamento: string): number {
   if (!dataAdmissao || !dataDesligamento) return 0;
-  
-  const admissao = new Date(dataAdmissao);
-  const desligamento = new Date(dataDesligamento);
-  
+
+  const admissao = parseDate(dataAdmissao);
+  const desligamento = parseDate(dataDesligamento);
+
   const anos = desligamento.getFullYear() - admissao.getFullYear();
   const meses = desligamento.getMonth() - admissao.getMonth();
   const dias = desligamento.getDate() - admissao.getDate();
-  
+
   let totalMeses = anos * 12 + meses;
   if (dias < 0) totalMeses--;
-  
+
   return Math.max(0, totalMeses);
+}
+
+/**
+ * Calcula meses calendário com depósito de FGTS.
+ * O FGTS é depositado mensalmente todo mês trabalhado (todo mês que contém
+ * pelo menos 1 dia de vínculo). Ex.: admissão 02/04/2024, desligamento
+ * 31/12/2026 → abril/2024 a dezembro/2026 = 33 meses calendário.
+ *
+ * Diferente de `calcularMesesTrabalhados`, que conta meses COMPLETOS entre
+ * datas (para uso em proporções como 13º). Aqui contamos a quantidade de
+ * folhas de pagamento que recebem o depósito de 8%.
+ */
+function calcularMesesCalendarioFGTS(dataAdmissao: string, dataDesligamento: string): number {
+  if (!dataAdmissao || !dataDesligamento) return 0;
+  const admissao = parseDate(dataAdmissao);
+  const desligamento = parseDate(dataDesligamento);
+  if (desligamento < admissao) return 0;
+  const anos = desligamento.getFullYear() - admissao.getFullYear();
+  const meses = desligamento.getMonth() - admissao.getMonth();
+  return Math.max(0, anos * 12 + meses + 1);
+}
+
+/**
+ * Estima a base do FGTS depositado durante o contrato.
+ * Inclui:
+ *   - 8% sobre salário em cada mês calendário trabalhado
+ *   - 8% sobre 13º salário (proporcional ao tempo no ano), uma vez por ano civil
+ *
+ * Usado quando o usuário não informa o saldo real do FGTS.
+ */
+function estimarSaldoFGTS(
+  salario: number,
+  dataAdmissao: string,
+  dataDesligamento: string
+): number {
+  if (!dataAdmissao || !dataDesligamento || salario <= 0) return 0;
+  const admissao = parseDate(dataAdmissao);
+  const desligamento = parseDate(dataDesligamento);
+  if (desligamento < admissao) return 0;
+
+  const mesesCalendario = calcularMesesCalendarioFGTS(dataAdmissao, dataDesligamento);
+  const fgtsSobreSalarios = salario * 0.08 * mesesCalendario;
+
+  // FGTS sobre 13º: 8% sobre o 13º proporcional pago em cada ano civil do contrato.
+  // Regra: mês com >= 15 dias trabalhados conta como 1/12 do 13º naquele ano.
+  let fgtsSobre13 = 0;
+  const anoInicio = admissao.getFullYear();
+  const anoFim = desligamento.getFullYear();
+  for (let ano = anoInicio; ano <= anoFim; ano++) {
+    // Início efetivo no ano: max(01/01/ano, admissão)
+    const inicioAno = ano === anoInicio ? admissao : new Date(ano, 0, 1);
+    // Fim efetivo no ano: min(31/12/ano, desligamento)
+    const fimAno = ano === anoFim ? desligamento : new Date(ano, 11, 31);
+
+    let mesesNoAno = 0;
+    for (let mes = inicioAno.getMonth(); mes <= fimAno.getMonth(); mes++) {
+      // Dias trabalhados no mês `mes` do ano `ano`
+      const ultimoDiaMes = new Date(ano, mes + 1, 0).getDate();
+      const primeiroDia = mes === inicioAno.getMonth() ? inicioAno.getDate() : 1;
+      const ultimoDia = mes === fimAno.getMonth() ? fimAno.getDate() : ultimoDiaMes;
+      const diasTrabalhados = ultimoDia - primeiroDia + 1;
+      if (diasTrabalhados >= 15) mesesNoAno++;
+    }
+    const decimo13Ano = (salario / 12) * mesesNoAno;
+    fgtsSobre13 += decimo13Ano * 0.08;
+  }
+
+  return fgtsSobreSalarios + fgtsSobre13;
 }
 
 /**
@@ -142,9 +231,9 @@ function calcularMesesTrabalhados(dataAdmissao: string, dataDesligamento: string
  */
 function calcularAnosCompletos(dataAdmissao: string, dataDesligamento: string): number {
   if (!dataAdmissao || !dataDesligamento) return 0;
-  
-  const admissao = new Date(dataAdmissao);
-  const desligamento = new Date(dataDesligamento);
+
+  const admissao = parseDate(dataAdmissao);
+  const desligamento = parseDate(dataDesligamento);
   
   let anos = desligamento.getFullYear() - admissao.getFullYear();
   
@@ -161,48 +250,62 @@ function calcularAnosCompletos(dataAdmissao: string, dataDesligamento: string): 
 }
 
 /**
- * Calcula meses trabalhados no ano da rescisão para 13º proporcional
- * REGRA CLT: mês com >= 15 dias trabalhados conta como mês cheio
+ * Calcula meses trabalhados no ano da rescisão para 13º proporcional.
+ * REGRA CLT (Lei 4.090/62, Decreto 57.155/65, Súmula 157 TST):
+ *   - Mês com >= 15 dias trabalhados conta como 1/12.
+ *   - Projeção do aviso prévio indenizado conta como tempo de serviço (Súm. 305/371 TST).
+ *
+ * IMPORTANTE: o 13º é calculado por ANO CIVIL. Quando a projeção do aviso cruza
+ * o ano (ex.: desligamento em dez/2026 com aviso projetando para jan/2027), o que
+ * importa para o 13º do ano de desligamento são os meses trabalhados naquele ano —
+ * a projeção apenas estende o tempo dentro do mesmo ano civil. Se a projeção
+ * cruzar para o próximo ano, ela não acrescenta avos ao 13º do ano corrente.
  */
 function calcularMeses13Proporcional(
-  dataAdmissao: string, 
+  dataAdmissao: string,
   dataDesligamento: string,
   diasAvisoProjetado: number = 0
 ): number {
   if (!dataAdmissao || !dataDesligamento) return 0;
-  
-  const admissao = new Date(dataAdmissao);
-  let desligamento = new Date(dataDesligamento);
-  
-  // Projetar contrato se aviso indenizado
+
+  const admissao = parseDate(dataAdmissao);
+  const desligamentoReal = parseDate(dataDesligamento);
+
+  // Ano civil de referência: o ano do desligamento REAL (não da projeção)
+  const anoRef = desligamentoReal.getFullYear();
+
+  // Data final efetiva: desligamento + projeção do aviso, limitada ao último dia do ano
+  let dataFinal = new Date(desligamentoReal);
   if (diasAvisoProjetado > 0) {
-    desligamento = new Date(desligamento.getTime() + diasAvisoProjetado * 24 * 60 * 60 * 1000);
+    dataFinal = new Date(desligamentoReal.getTime() + diasAvisoProjetado * 24 * 60 * 60 * 1000);
   }
-  
-  const anoDesligamento = desligamento.getFullYear();
-  
-  const mesInicio = admissao.getFullYear() === anoDesligamento 
-    ? admissao.getMonth() 
-    : 0;
-  
-  const mesFinal = desligamento.getMonth();
-  
+  const ultimoDiaDoAno = new Date(anoRef, 11, 31);
+  if (dataFinal > ultimoDiaDoAno) {
+    dataFinal = ultimoDiaDoAno;
+  }
+
+  // Primeiro mês a contar: janeiro do ano de referência OU mês da admissão (se mesmo ano)
+  const mesmoAno = admissao.getFullYear() === anoRef;
+  const mesInicio = mesmoAno ? admissao.getMonth() : 0;
+  const mesFinal = dataFinal.getMonth();
+
   let meses = 0;
-  
+
   for (let m = mesInicio; m <= mesFinal; m++) {
-    const diasNoMes = new Date(anoDesligamento, m + 1, 0).getDate();
-    
-    if (m === mesInicio && admissao.getFullYear() === anoDesligamento) {
-      const diaAdmissao = admissao.getDate();
-      const diasTrabalhados = diasNoMes - diaAdmissao + 1;
+    const diasNoMes = new Date(anoRef, m + 1, 0).getDate();
+
+    if (m === mesInicio && mesmoAno) {
+      // Mês da admissão: conta dias do dia da admissão até o fim do mês
+      const diasTrabalhados = diasNoMes - admissao.getDate() + 1;
       if (diasTrabalhados >= 15) meses++;
     } else if (m === mesFinal) {
-      if (desligamento.getDate() >= 15) meses++;
+      // Mês final: usa a dataFinal (com projeção limitada ao ano)
+      if (dataFinal.getDate() >= 15) meses++;
     } else {
       meses++;
     }
   }
-  
+
   return Math.min(12, Math.max(0, meses));
 }
 
@@ -217,13 +320,13 @@ function calcularMesesFeriasProporcionais(
 ): number {
   if (!dataAdmissao || !dataDesligamento) return 0;
   
-  const admissao = new Date(dataAdmissao);
-  let desligamento = new Date(dataDesligamento);
-  
+  const admissao = parseDate(dataAdmissao);
+  let desligamento = parseDate(dataDesligamento);
+
   if (diasAvisoProjetado > 0) {
     desligamento = new Date(desligamento.getTime() + diasAvisoProjetado * 24 * 60 * 60 * 1000);
   }
-  
+
   let ultimoAniversario = new Date(admissao);
   while (ultimoAniversario <= desligamento) {
     const proximoAniversario = new Date(ultimoAniversario);
@@ -303,40 +406,48 @@ function calcularRedutorIRRF(rendaMensal: number): number {
 }
 
 /**
- * Calcula o IRRF usando tabela progressiva 2026
- * Passos:
- * 1. Somar parcelas tributáveis (salário + 13º + adicionais)
- * 2. Subtrair INSS calculado e R$ 189,59 por dependente
- * 3. Aplicar redutor se enquadrado
- * 4. Enquadrar na tabela e calcular imposto
+ * Calcula o IRRF usando a tabela progressiva 2026 + redutor da Lei 15.270/2025.
+ *
+ * REGRA OFICIAL (Receita Federal, jan/2026):
+ *   1. base = rendimento − INSS − (dependentes × 189,59)
+ *   2. imposto pela tabela = base × alíquota_faixa − parcela_deduzir
+ *   3. imposto_final = MAX(0, imposto − redutor)         ← redutor incide no IMPOSTO
+ *
+ * O redutor é calculado a partir do **rendimento bruto mensal** (não da base):
+ *   - até R$ 5.000,00:               redutor = R$ 312,89  → isenta totalmente
+ *   - de R$ 5.000,01 a R$ 7.350,00:  redutor = 978,62 − 0,133145 × rendimento
+ *   - acima de R$ 7.350,00:          redutor = 0  (tabela progressiva pura)
  */
 function calcularIRRF(baseTributavel: number, inssDescontado: number, numDependentes: number): number {
   if (baseTributavel <= 0) return 0;
-  
-  // Deduzir INSS e dependentes
+
   const dependentesValidos = Math.max(0, numDependentes);
   const deducaoDependentes = dependentesValidos * DEDUCAO_DEPENDENTE_IRRF;
-  
-  let baseCalculo = baseTributavel - inssDescontado - deducaoDependentes;
-  
-  // Aplicar redutor
-  const redutor = calcularRedutorIRRF(baseTributavel);
-  baseCalculo = baseCalculo - redutor;
-  
+
+  // Base de cálculo (rendimento − INSS − dependentes)
+  const baseCalculo = baseTributavel - inssDescontado - deducaoDependentes;
+
   if (baseCalculo <= 0) return 0;
-  
-  // Encontrar a faixa correta
+
+  // Imposto pela tabela progressiva
+  let impostoTabela = 0;
   for (const faixa of TABELA_IRRF_2026) {
     if (baseCalculo <= faixa.limite) {
-      const imposto = (baseCalculo * faixa.aliquota) - faixa.deducao;
-      return arredondar(Math.max(0, imposto));
+      impostoTabela = (baseCalculo * faixa.aliquota) - faixa.deducao;
+      break;
     }
   }
-  
-  // Se exceder todas as faixas, usar a última
-  const ultimaFaixa = TABELA_IRRF_2026[TABELA_IRRF_2026.length - 1];
-  const imposto = (baseCalculo * ultimaFaixa.aliquota) - ultimaFaixa.deducao;
-  return arredondar(Math.max(0, imposto));
+  if (impostoTabela === 0 && baseCalculo > TABELA_IRRF_2026[TABELA_IRRF_2026.length - 2].limite) {
+    const ultimaFaixa = TABELA_IRRF_2026[TABELA_IRRF_2026.length - 1];
+    impostoTabela = (baseCalculo * ultimaFaixa.aliquota) - ultimaFaixa.deducao;
+  }
+  impostoTabela = Math.max(0, impostoTabela);
+
+  // Redutor Lei 15.270/2025 — incide sobre o IMPOSTO, não sobre a base
+  const redutor = calcularRedutorIRRF(baseTributavel);
+  const impostoFinal = Math.max(0, impostoTabela - redutor);
+
+  return arredondar(impostoFinal);
 }
 
 // ============================================================================
@@ -431,14 +542,40 @@ function calcularValorBase(formData: FormData): {
       break;
       
     case 'termino_contrato':
-    case 'termino_antecipado_empregador':
-    case 'termino_antecipado_empregado':
-      // Término contrato temporário: saldo, 13º, férias prop
-      // Sem aviso, sem multa 40%, mas pode sacar 100%
+      // Término natural do contrato a prazo determinado (data prevista):
+      // saldo, 13º proporcional, férias proporcionais + 1/3. Sem aviso,
+      // sem multa 40%, sem indenização art. 479. Saque 100% FGTS.
       regras.tem13Proporcional = true;
       regras.temFeriasProporcionais = true;
       regras.percentualMultaFgts = 0;
       regras.percentualSaqueFgts = 100;
+      regras.temSeguroDesemprego = false;
+      break;
+
+    case 'termino_antecipado_empregador':
+      // Empregador rescinde contrato a prazo determinado ANTES do fim (CLT art. 479):
+      // saldo, 13º, férias prop, MULTA 40% FGTS, saque 100%, e indenização
+      // de 50% dos salários do período restante (art. 479 CLT).
+      // Tratamento equiparado à demissão sem justa causa para fins de FGTS.
+      regras.tem13Proporcional = true;
+      regras.temFeriasProporcionais = true;
+      regras.temMultaFgts = true;
+      regras.percentualMultaFgts = 40;
+      regras.percentualSaqueFgts = 100;
+      regras.temSeguroDesemprego = true;
+      // OBS: a indenização do art. 479 não é calculada aqui — exige conhecer
+      // a data prevista de fim do contrato (não coletada no quiz atual).
+      break;
+
+    case 'termino_antecipado_empregado':
+      // Empregado rescinde contrato a prazo determinado ANTES do fim (CLT art. 480):
+      // saldo, 13º, férias proporcionais. Sem multa 40%, sem saque, sem seguro.
+      // Pode haver desconto de indenização ao empregador (art. 480 §1º),
+      // limitada à metade do que receberia até o fim — não modelado aqui.
+      regras.tem13Proporcional = true;
+      regras.temFeriasProporcionais = true;
+      regras.percentualMultaFgts = 0;
+      regras.percentualSaqueFgts = 0;
       regras.temSeguroDesemprego = false;
       break;
   }
@@ -471,10 +608,18 @@ function calcularValorBase(formData: FormData): {
   
   if (regras.temAvisoPrevio) {
     diasAvisoPrevio = calcularDiasAvisoPrevio(anosCompletos);
-    
-    if (formData.tipoAvisoPrevio === 'indenizado' || formData.tipoAvisoPrevio === 'metade') {
+
+    // No acordo 484-A o aviso é SEMPRE devido pela metade, independente
+    // do que o usuário responder em `tipoAvisoPrevio` (a verba existe por
+    // força do art. 484-A §1º, II — pode ser indenizada ou trabalhada).
+    const pagaAviso =
+      regras.metadeAviso ||
+      formData.tipoAvisoPrevio === 'indenizado' ||
+      formData.tipoAvisoPrevio === 'metade';
+
+    if (pagaAviso) {
       let valorAviso = arredondar(salarioDia * diasAvisoPrevio);
-      
+
       if (regras.metadeAviso) {
         valorAviso = arredondar(valorAviso / 2);
         verbas.push({
@@ -493,11 +638,14 @@ function calcularValorBase(formData: FormData): {
           detalhes: `R$ ${salario.toFixed(2)} ÷ 30 × ${diasAvisoPrevio} dias — Isento de INSS e IRRF`,
         });
       }
-      
+
       avisoPrevio = valorAviso;
-      
+
       if (regras.projetarContrato) {
-        diasProjecao = diasAvisoPrevio;
+        // Em acordo, a projeção é proporcional aos dias efetivamente pagos (metade).
+        diasProjecao = regras.metadeAviso
+          ? Math.floor(diasAvisoPrevio / 2)
+          : diasAvisoPrevio;
       }
     }
   }
@@ -618,10 +766,10 @@ function calcularValorBase(formData: FormData): {
   // 6. FGTS ESTIMADO E MULTA
   // Multa: 40% (demissão sem justa causa), 20% (acordo), 0% (demais)
   // ================================================================
-  // Usar saldo informado pelo usuário ou estimar
-  const fgtsEstimado = formData.saldoFGTS > 0 
-    ? formData.saldoFGTS 
-    : arredondar(salario * 0.08 * mesesTrabalhados);
+  // Usar saldo informado pelo usuário ou estimar (8% sobre salários + 8% sobre 13ºs)
+  const fgtsEstimado = formData.saldoFGTS > 0
+    ? formData.saldoFGTS
+    : arredondar(estimarSaldoFGTS(salario, formData.dataAdmissao, formData.dataDesligamento));
   
   let multaFgts = 0;
   
@@ -644,33 +792,56 @@ function calcularValorBase(formData: FormData): {
   // ================================================================
   // 7. CÁLCULO DOS DESCONTOS (INSS e IRRF)
   // ================================================================
-  // Base tributável para INSS: saldo de salário + 13º proporcional
-  // IMPORTANTE: Férias, 1/3 e aviso indenizado NÃO sofrem desconto de INSS
-  const baseTributavelINSS = saldoSalario + decimoTerceiro;
-  const descontoINSS = calcularINSS(baseTributavelINSS);
-  
+  // REGRA OFICIAL: saldo de salário e 13º têm tributação SEPARADA
+  //   - INSS sobre saldo: tabela mensal (verba salarial do mês)
+  //   - INSS sobre 13º: tabela aplicada isoladamente (verba anual autônoma)
+  //   - IRRF sobre saldo: tabela mensal
+  //   - IRRF sobre 13º: tributação EXCLUSIVA na fonte (Lei 7.713/88 art. 16)
+  //
+  // Verbas ISENTAS (não entram na base): aviso prévio indenizado (Súm. 688 STF),
+  // férias indenizadas e 1/3 (Súm. 386 STJ), multa 40% FGTS, saque FGTS.
+  // ================================================================
+  const numDependentes = formData.numDependentes >= 0 ? formData.numDependentes : 0;
+
+  // --- INSS sobre saldo de salário ---
+  const inssSaldo = calcularINSS(saldoSalario);
+  // --- INSS sobre 13º (cálculo separado) ---
+  const inss13 = calcularINSS(decimoTerceiro);
+
+  const descontoINSS = arredondar(inssSaldo + inss13);
+
   if (descontoINSS > 0) {
+    const detalhesINSS = decimoTerceiro > 0
+      ? `Saldo: R$ ${inssSaldo.toFixed(2)} + 13º: R$ ${inss13.toFixed(2)} (cálculos separados)`
+      : `Base: R$ ${saldoSalario.toFixed(2)} (saldo de salário)`;
+
     verbas.push({
       id: 'descontoINSS',
       descricao: 'INSS',
       valor: descontoINSS,
       tipo: 'desconto',
-      detalhes: `Base: R$ ${baseTributavelINSS.toFixed(2)} (saldo + 13º)`,
+      detalhes: detalhesINSS,
     });
   }
-  
-  // Base tributável para IRRF: igual ao INSS
-  // Deduzir: INSS já calculado + dependentes
-  const numDependentes = formData.numDependentes >= 0 ? formData.numDependentes : 0;
-  const descontoIRRF = calcularIRRF(baseTributavelINSS, descontoINSS, numDependentes);
-  
+
+  // --- IRRF sobre saldo de salário (com dependentes e redutor) ---
+  const irrfSaldo = calcularIRRF(saldoSalario, inssSaldo, numDependentes);
+  // --- IRRF sobre 13º (tributação exclusiva, com dependentes e redutor) ---
+  const irrf13 = calcularIRRF(decimoTerceiro, inss13, numDependentes);
+
+  const descontoIRRF = arredondar(irrfSaldo + irrf13);
+
   if (descontoIRRF > 0) {
+    const detalhesIRRF = decimoTerceiro > 0
+      ? `Saldo: R$ ${irrfSaldo.toFixed(2)} + 13º: R$ ${irrf13.toFixed(2)} (tributação exclusiva)`
+      : `Base: R$ ${saldoSalario.toFixed(2)} − INSS − ${numDependentes} dep.`;
+
     verbas.push({
       id: 'descontoIRRF',
       descricao: 'IRRF',
       valor: descontoIRRF,
       tipo: 'desconto',
-      detalhes: `Base: R$ ${baseTributavelINSS.toFixed(2)} - INSS - ${numDependentes} dep.`,
+      detalhes: detalhesIRRF,
     });
   }
   

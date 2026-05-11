@@ -1,5 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle2, Info, Briefcase, DollarSign } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, MinusCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatarMoeda } from '@/lib/calculo-extras';
 import { DadosFluxoAnterior } from '@/types/pos-pagamento-v2';
 
@@ -16,145 +17,100 @@ interface SecaoBasicoProps {
   dadosBase: DadosFluxoAnterior;
 }
 
-export function SecaoBasico({ linhas, totalBasico, dadosBase }: SecaoBasicoProps) {
-  const calcularTempoServico = () => {
-    if (!dadosBase.dataAdmissao || !dadosBase.dataDesligamento) return '';
-    try {
-      const admissao = new Date(dadosBase.dataAdmissao);
-      const desligamento = new Date(dadosBase.dataDesligamento);
-      const diffMs = desligamento.getTime() - admissao.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const anos = Math.floor(diffDays / 365);
-      const meses = Math.floor((diffDays % 365) / 30);
-      const dias = diffDays % 30;
-      
-      let resultado = '';
-      if (anos > 0) resultado += `${anos} ano${anos > 1 ? 's' : ''}, `;
-      if (meses > 0) resultado += `${meses} ${meses > 1 ? 'meses' : 'mês'}, `;
-      resultado += `${dias} dia${dias !== 1 ? 's' : ''}`;
-      return resultado;
-    } catch {
-      return '';
-    }
-  };
+const PREVIEW_COUNT = 3;
 
-  const formatarData = (data: string) => {
-    if (!data) return '-';
-    try {
-      return new Date(data).toLocaleDateString('pt-BR');
-    } catch {
-      return data;
-    }
-  };
+export function SecaoBasico({ linhas, totalBasico }: SecaoBasicoProps) {
+  const [isOpen, setIsOpen] = useState(false);
 
-  const tempoServico = calcularTempoServico();
-
-  const proventos = linhas.filter(l => l.tipo !== 'desconto');
-  const descontos = linhas.filter(l => l.tipo === 'desconto');
-  const subtotalProventos = proventos.reduce((acc, l) => acc + l.valor, 0);
-  const subtotalDescontos = descontos.reduce((acc, l) => acc + l.valor, 0);
+  const linhasPreview = linhas.slice(0, PREVIEW_COUNT);
+  const totalLinhas = linhas.length;
+  const restantes = totalLinhas - PREVIEW_COUNT;
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="bg-primary/5 border-b p-3 sm:p-4">
-        <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-          <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
-          <span>Verbas Rescisórias Básicas</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        {/* Dados do Contrato */}
-        <div className="p-3 sm:p-4 bg-muted/30 border-b">
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
-            <Briefcase className="w-3 h-3" />
-            Dados do Contrato
-          </h4>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-4 text-xs sm:text-sm">
-            <div>
-              <span className="text-muted-foreground">Admissão:</span>
-              <span className="font-medium ml-1">{formatarData(dadosBase.dataAdmissao)}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Desligamento:</span>
-              <span className="font-medium ml-1">{formatarData(dadosBase.dataDesligamento)}</span>
-            </div>
-            <div className="col-span-2 lg:col-span-1">
-              <span className="text-muted-foreground">Tempo de serviço:</span>
-              <span className="font-medium ml-1">{tempoServico || '-'}</span>
-            </div>
-            <div className="col-span-2 lg:col-span-1">
-              <span className="text-muted-foreground">Salário base:</span>
-              <span className="font-medium ml-1">{formatarMoeda(dadosBase.salarioBrutoMensal)}</span>
-            </div>
-          </div>
-        </div>
+    <>
+      <section className="bg-card rounded-3xl border border-border shadow-sm overflow-hidden">
+        <header className="px-5 sm:px-7 pt-6 pb-5 border-b border-border">
+          <h2 className="text-lg sm:text-xl font-extrabold text-foreground tracking-tight">
+            Verbas Básicas
+          </h2>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Valores que compõem a sua rescisão pela CLT.
+          </p>
+        </header>
 
-        {/* Proventos */}
-        {proventos.length > 0 && (
-          <div className="divide-y">
-            {proventos.map((linha, index) => (
-              <div key={index} className="p-3 sm:p-4 hover:bg-muted/20 transition-colors">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm sm:text-base">{linha.descricao}</p>
-                    {linha.explicacao && (
-                      <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
-                        <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>{linha.explicacao}</span>
-                      </p>
-                    )}
-                  </div>
-                  <p className="font-bold text-sm sm:text-base text-primary whitespace-nowrap">
-                    {formatarMoeda(linha.valor)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+        <ul className="divide-y divide-border">
+          {linhasPreview.map((linha, index) => (
+            <LinhaItem key={index} linha={linha} />
+          ))}
+        </ul>
+
+        {restantes > 0 && (
+          <button
+            onClick={() => setIsOpen(true)}
+            className="w-full px-5 sm:px-7 py-3.5 text-sm font-semibold text-success hover:bg-muted/40 border-t border-border transition-colors text-center"
+          >
+            Ver todas as {totalLinhas} verbas →
+          </button>
         )}
 
-        {/* Descontos - em vermelho */}
-        {descontos.length > 0 && (
-          <div className="divide-y border-t">
-            {descontos.map((linha, index) => (
-              <div key={index} className="p-3 sm:p-4 bg-destructive/5 hover:bg-destructive/10 transition-colors">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm sm:text-base text-destructive">{linha.descricao}</p>
-                    {linha.explicacao && (
-                      <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
-                        <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>{linha.explicacao}</span>
-                      </p>
-                    )}
-                  </div>
-                  <p className="font-bold text-sm sm:text-base text-destructive whitespace-nowrap">
-                    - {formatarMoeda(linha.valor)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Subtotal */}
-        <div className="p-3 sm:p-4 bg-primary/10 border-t-2 border-primary/30">
+        <footer className="px-5 sm:px-7 py-5 bg-muted/20 border-t border-border">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-primary" />
-              <span className="font-bold text-sm sm:text-base">Subtotal Verbas Básicas</span>
-            </div>
-            <p className="text-lg sm:text-xl font-black text-primary">
+            <p className="text-sm font-bold text-foreground">Total verbas básicas</p>
+            <p className="text-sm font-bold text-success tabular-nums">
               {formatarMoeda(totalBasico)}
             </p>
           </div>
-          {descontos.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Proventos: {formatarMoeda(subtotalProventos)} | Descontos: -{formatarMoeda(subtotalDescontos)}
+        </footer>
+      </section>
+
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-extrabold">Verbas Básicas</DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Todas as {totalLinhas} verbas detalhadas
             </p>
-          )}
+          </DialogHeader>
+          <ul className="divide-y divide-border -mx-6 mt-2">
+            {linhas.map((linha, index) => (
+              <LinhaItem key={index} linha={linha} />
+            ))}
+          </ul>
+          <div className="flex items-center justify-between pt-3 mt-3 border-t border-border">
+            <p className="text-sm font-bold text-foreground">Total</p>
+            <p className="text-lg font-black text-success tabular-nums">{formatarMoeda(totalBasico)}</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function LinhaItem({ linha }: { linha: LinhaBasico }) {
+  const isDesconto = linha.tipo === 'desconto';
+  return (
+    <li className={`px-5 sm:px-7 py-4 hover:bg-muted/30 transition-colors ${isDesconto ? 'bg-destructive/[0.03]' : ''}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isDesconto ? 'bg-destructive/15' : 'bg-success/15'}`}>
+            {isDesconto ? (
+              <MinusCircle className="w-3.5 h-3.5 text-destructive" strokeWidth={2.5} />
+            ) : (
+              <CheckCircle2 className="w-3.5 h-3.5 text-success" strokeWidth={2.5} />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground leading-snug">{linha.descricao}</p>
+            {linha.explicacao && (
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{linha.explicacao}</p>
+            )}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+        <p className={`text-sm sm:text-base font-extrabold tabular-nums whitespace-nowrap ${isDesconto ? 'text-destructive' : 'text-foreground'}`}>
+          {isDesconto && '−'}
+          {formatarMoeda(linha.valor)}
+        </p>
+      </div>
+    </li>
   );
 }

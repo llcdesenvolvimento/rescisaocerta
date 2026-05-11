@@ -3,7 +3,7 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { AdBanner } from "@/components/AdBanner";
 import { RelatedPosts } from "@/components/RelatedPosts";
-import { ArrowRight, CheckCircle, Clock, Sparkles, Scale, Search, UserCheck } from "lucide-react";
+import { ArrowRight, CheckCircle, Clock, Sparkles, Scale, Search, UserCheck, Users } from "lucide-react";
 
 interface QuizLandingProps {
   onStart: () => void;
@@ -452,11 +452,14 @@ export function QuizLanding({ onStart }: QuizLandingProps) {
           </Button>
 
           {/* Microcopy abaixo do CTA */}
-          <div className="flex items-center justify-center mt-4 text-[11px] sm:text-xs text-muted-foreground">
-            <div className="flex items-center gap-1.5">
+          <div className="flex flex-col items-center gap-1.5 mt-4">
+            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
               <Clock className="w-3.5 h-3.5 text-primary" />
               <span>Resultado em <strong className="text-foreground">menos de 3 minutos</strong></span>
             </div>
+            <p className="text-[10px] text-muted-foreground/70">
+              Usado por + de 2.574.600 trabalhadores
+            </p>
           </div>
         </div>
       </main>

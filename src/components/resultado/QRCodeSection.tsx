@@ -71,10 +71,10 @@ export const QRCodeSection = forwardRef<HTMLDivElement, QRCodeSectionProps>(
           <div className="text-center space-y-3">
             <div>
               <p className="font-bold text-foreground text-lg leading-relaxed">
-                Obtenha a <span className="text-primary">Análise Completa</span> da <span className="text-primary">Rescisão</span> de <span className="font-black text-foreground">{firstName}</span> no e-mail <span className="font-black text-foreground">{userEmail}</span> por apenas
+                Obtenha a <span className="text-primary">Análise Completa</span> da <span className="text-primary">Rescisão</span> de <span className="font-black text-foreground">{firstName}</span> no e-mail <span className="font-bold text-foreground bg-muted px-1.5 py-0.5 rounded">{userEmail}</span> por apenas
               </p>
               <div className="flex flex-col items-center mt-2">
-                <span className="text-sm text-muted-foreground line-through">R$ 24,90</span>
+                <span className="text-sm text-muted-foreground line-through">R$ 26,90</span>
                 <span className="text-2xl font-black text-success">R$ 16,90</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">Acesso liberado em segundos.</p>
@@ -94,13 +94,12 @@ export const QRCodeSection = forwardRef<HTMLDivElement, QRCodeSectionProps>(
             </div>
             <Button
               onClick={onCopyCode}
-              variant="outline"
-              className="w-full h-12 font-bold text-sm border-2 border-primary/30 hover:bg-primary/5"
+              className="w-full h-12 font-bold text-sm bg-primary hover:bg-primary/90 text-white border-0 shadow-md shadow-primary/20"
             >
               {copied ? (
                 <>
-                  <Check className="h-5 w-5 mr-2 text-primary" />
-                  <span className="text-primary">Código Copiado!</span>
+                  <Check className="h-5 w-5 mr-2" />
+                  Código Copiado!
                 </>
               ) : (
                 <>
@@ -191,7 +190,7 @@ export const QRCodeSection = forwardRef<HTMLDivElement, QRCodeSectionProps>(
           <div className="bg-muted/50 rounded-xl p-3 border border-border space-y-1.5">
             <div className="flex justify-between text-[11px]">
               <span className="text-muted-foreground">Análise Completa da Rescisão</span>
-              <span className="text-muted-foreground line-through">R$ 24,90</span>
+              <span className="text-muted-foreground line-through">R$ 26,90</span>
             </div>
             <div className="flex justify-between text-[11px]">
               <span className="text-muted-foreground">Bônus: Checklist de Documentos</span>
@@ -205,7 +204,7 @@ export const QRCodeSection = forwardRef<HTMLDivElement, QRCodeSectionProps>(
             <div className="flex justify-between items-baseline">
               <span className="text-xs font-bold text-foreground">Total hoje:</span>
               <div className="text-right">
-                <span className="text-sm text-muted-foreground line-through mr-2">R$ 44,70</span>
+                <span className="text-sm text-muted-foreground line-through mr-2">R$ 46,70</span>
                 <span className="text-lg font-black text-primary">R$ 16,90</span>
               </div>
             </div>

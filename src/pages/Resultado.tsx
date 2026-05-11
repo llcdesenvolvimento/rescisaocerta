@@ -14,6 +14,7 @@ import { TrendingUp, CheckCircle2, Shield, AlertTriangle, ShieldAlert, ArrowLeft
 import { Footer } from "@/components/layout/Footer";
 import { cn } from "@/lib/utils";
 import { calcularRescisaoCompleta } from "@/lib/calculadora-rescisao-completa";
+import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/layout/Logo";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useSaveCalculo } from "@/hooks/useSaveCalculo";
@@ -42,11 +43,70 @@ export default function Resultado() {
   const qrCodeRef = useRef<HTMLDivElement>(null);
   const emailFormRef = useRef<HTMLDivElement>(null);
 
-  // Recuperar dados do formulário da sessão
-  const formData = useMemo(() => {
-    const raw = sessionStorage.getItem("rescisao-calculator-form");
-    return raw ? JSON.parse(raw) : null;
-  }, []);
+  // Recuperar dados do formulário diretamente do Supabase pelo ?qid= da URL.
+  // Sem sessionStorage — link funciona em qualquer browser/dispositivo.
+  const [formData, setFormData] = useState<Record<string, unknown> | null>(null);
+  const [isLoadingFormData, setIsLoadingFormData] = useState(true);
+  const [quizSessionMissing, setQuizSessionMissing] = useState(false);
+
+  // Importante: dependência tem que ser o VALOR de qid, não o objeto searchParams,
+  // senão qualquer mudança em outro param (ex.: navigate de /resultado pra /pagamento)
+  // dispara nova busca + refresh visual.
+  const qidFromUrl = searchParams.get("qid") || searchParams.get("id") || "";
+  useEffect(() => {
+    if (!qidFromUrl) {
+      setIsLoadingFormData(false);
+      setQuizSessionMissing(true);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingFormData(true);
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("quiz_sessions")
+          .select("respostas")
+          .eq("id", qidFromUrl)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.warn("[Resultado] erro Supabase:", error);
+          setQuizSessionMissing(true);
+          return;
+        }
+
+        const respostas = data?.respostas as Record<string, unknown> | undefined;
+
+        // Sessão não existe OU está vazia (sem respostas mínimas para o cálculo)
+        const semCalculoMinimo = !respostas ||
+          !respostas.salarioFixo ||
+          !respostas.dataAdmissao ||
+          !respostas.dataDesligamento ||
+          !respostas.tipoDesligamento;
+
+        if (semCalculoMinimo) {
+          console.warn("[Resultado] quiz_session sem dados suficientes:", qidFromUrl, respostas);
+          setQuizSessionMissing(true);
+          return;
+        }
+
+        setFormData(respostas);
+      } catch (err) {
+        console.error("[Resultado] erro ao buscar quiz_session:", err);
+        setQuizSessionMissing(true);
+      } finally {
+        if (!cancelled) setIsLoadingFormData(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qidFromUrl]);
 
   // Calcular resultado
   const resultado = useMemo(() => {
@@ -58,26 +118,12 @@ export default function Resultado() {
     ) {
       return null;
     }
-    const res = calcularRescisaoCompleta(formData);
-    // Persistir verbas e detalhamento para o relatório completo
-    try {
-      sessionStorage.setItem("rescisao-verbas-resultado", JSON.stringify(res.verbas));
-      sessionStorage.setItem("rescisao-detalhamento-resultado", JSON.stringify(res.detalhamento));
-    } catch {}
-    return res;
+    return calcularRescisaoCompleta(formData);
   }, [formData]);
 
-  // Percentual de risco - recupera do sessionStorage (persistido pelo QuizRiskScreen)
+  // Percentual de risco — derivado deterministicamente do qid (sem cache)
   const riskPercent = useMemo(() => {
-    const saved = sessionStorage.getItem("rescisao-risk-values");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.riskPercent) return parsed.riskPercent;
-      } catch {}
-    }
-    // Fallback caso não haja valor salvo
-    const sessionId = searchParams.get("id") || "";
+    const sessionId = searchParams.get("qid") || searchParams.get("id") || "";
     const hash = sessionId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const allowedPercents = [68, 69, 71, 72, 73, 74, 76, 77, 78, 79, 81, 82, 83, 84];
     return allowedPercents[hash % allowedPercents.length];
@@ -87,28 +133,43 @@ export default function Resultado() {
   const { calculoId, setCalculoId, setCodigoUnico } = useSaveCalculo({
     formData,
     valorBase: resultado?.valorBase,
+    valorBruto: resultado?.valorBruto,
+    totalDescontos: resultado?.totalDescontos,
+    valorPotencial: resultado?.valorPotencial,
+    verbas: resultado?.verbas,
+    modulosExtras: resultado?.modulosOportunidade,
+    tipoRescisao: resultado?.tipoRescisao,
+    mesesTrabalhados: resultado?.mesesTrabalhados,
+    detalhamento: resultado?.detalhamento as unknown as Record<string, number>,
   });
-  const { isLoading, loadingStep, qrCode, qrCodeUrl, copied, isVerifying, generatePix, verifyPayment, copyCode } =
+  const { isLoading, loadingStep, qrCode, qrCodeUrl, copied, isVerifying, generatePix, verifyPayment, copyCode, recoveredName, recoveredEmail } =
     usePixPayment({
       calculoId,
       formData,
       valorBase: resultado?.valorBase,
     });
 
-  // Adicionar UUID na URL se não existir
+  // Quando o usuário recarrega a página e há pagamento pendente no banco,
+  // popular nome/email com os valores recuperados (pra mostrar no QR section)
   useEffect(() => {
-    if (!searchParams.get("id")) {
-      const uuid = crypto.randomUUID();
-      setSearchParams(
-        {
-          id: uuid,
-        },
-        {
-          replace: true,
-        },
-      );
+    if (recoveredName && !userName) setUserName(recoveredName);
+    if (recoveredEmail && !userEmail) setUserEmail(recoveredEmail);
+  }, [recoveredName, recoveredEmail, userName, userEmail]);
+
+  // Migra ?id= legado para ?qid=. Se URL não tem nenhum dos dois, redireciona
+  // pra home (sem qid não há como buscar a quiz_session).
+  useEffect(() => {
+    const qid = searchParams.get("qid");
+    const legacyId = searchParams.get("id");
+
+    if (!qid && !legacyId) {
+      navigate("/", { replace: true });
+      return;
     }
-  }, [searchParams, setSearchParams]);
+    if (!qid && legacyId) {
+      setSearchParams({ qid: legacyId }, { replace: true });
+    }
+  }, [searchParams, setSearchParams, navigate]);
 
   // Scroll para o topo quando a página carrega
   useEffect(() => {
@@ -167,37 +228,38 @@ export default function Resultado() {
     };
   }, []);
 
-  // Redirecionar se não houver dados
+  // Redirecionar para home apenas se confirmou que NÃO há quiz_session no banco
+  // (não redireciona enquanto está carregando do Supabase).
   useEffect(() => {
-    if (!resultado) {
+    if (isLoadingFormData) return; // ainda buscando
+    if (!resultado && quizSessionMissing) {
       navigate("/");
     }
-  }, [resultado, navigate]);
+  }, [resultado, isLoadingFormData, quizSessionMissing, navigate]);
 
-  // Auto-scroll e mudança de URL quando QR Code é gerado
+  // Auto-scroll e mudança de URL quando QR Code é gerado.
+  // Depende de `qidFromUrl` (string), não de `searchParams` (objeto), pra não
+  // re-rodar quando algum outro param mudar.
   useEffect(() => {
-    if (qrCodeUrl) {
-      // Mudar URL para /pagamento mantendo o id
-      const currentId = searchParams.get("id");
-      if (window.location.pathname !== "/pagamento" && currentId) {
-        navigate(`/pagamento?id=${currentId}`, { replace: true });
-      }
-
-      if (faltaPoucoRef.current) {
-        setTimeout(() => {
-          const element = faltaPoucoRef.current;
-          if (element) {
-            const headerHeight = 72;
-            const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
-            window.scrollTo({
-              top: elementPosition - headerHeight,
-              behavior: "smooth",
-            });
-          }
-        }, 300);
-      }
+    if (!qrCodeUrl) return;
+    if (window.location.pathname !== "/pagamento" && qidFromUrl) {
+      navigate(`/pagamento?qid=${qidFromUrl}`, { replace: true });
     }
-  }, [qrCodeUrl, searchParams, navigate]);
+
+    if (faltaPoucoRef.current) {
+      setTimeout(() => {
+        const element = faltaPoucoRef.current;
+        if (element) {
+          const headerHeight = 72;
+          const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
+          window.scrollTo({
+            top: elementPosition - headerHeight,
+            behavior: "smooth",
+          });
+        }
+      }, 300);
+    }
+  }, [qrCodeUrl, qidFromUrl, navigate]);
   const validateEmail = useCallback((email: string): boolean => {
     const v = (email || "").trim();
     if (!v || v.length > 254) return false;
@@ -232,20 +294,32 @@ export default function Resultado() {
     }
     if (hasError) return;
 
-    // Salvar nome no sessionStorage
-    sessionStorage.setItem("rescisao-user-name", userName.trim());
-
-    // Bypass para teste: liberar acesso gratuito com email específico
+    // Bypass para teste: liberar acesso direto ao relatório.
+    // Registra um pagamento fake `paid` para que os upsells reconheçam o bypass
+    // (eles consultam o email do pagamento mais recente em `pagamentos`).
     if (userEmail.trim().toLowerCase() === "liberaragora@gmail.com") {
-      if (resultado?.valorBase) {
-        sessionStorage.setItem("rescisao-valor-base-original", String(resultado.valorBase));
+      if (!calculoId) {
+        // Aguarda o useSaveCalculo terminar (raro, mas possível)
+        return;
       }
-      const transactionId = crypto.randomUUID();
-      navigate(`/pos-pagamento?transaction_id=${transactionId}&bypass=true`);
+      try {
+        await supabase.from("pagamentos").insert({
+          calculo_id: calculoId,
+          email: "liberaragora@gmail.com",
+          nome: userName || "Bypass",
+          amount_cents: 0,
+          status: "pago",
+          provider: "bypass",
+          paid_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("Erro ao registrar bypass:", err);
+      }
+      navigate(`/relatorio?id=${calculoId}`);
       return;
     }
-    await generatePix(userEmail);
-  }, [userName, userEmail, validateEmail, generatePix, navigate, resultado]);
+    await generatePix(userEmail, userName);
+  }, [userName, userEmail, validateEmail, generatePix, navigate, calculoId]);
   const handleNameChange = useCallback(
     (name: string) => {
       setUserName(name);
@@ -265,18 +339,28 @@ export default function Resultado() {
   }, []);
   const handleConfirmExit = useCallback(() => {
     setShowExitConfirm(false);
-    // Voltar para a tela de problema (QuizProblemScreen) via state
-    const formDataStr = sessionStorage.getItem("rescisao-calculator-form");
-    if (formDataStr) {
+    // Voltar para a tela de pré-resultado.
+    // Se o usuário respondeu o bloco extras, volta para a última pergunta das extras;
+    // caso contrário, volta para a última pergunta do bloco essencial.
+    const quizId = searchParams.get("qid") || searchParams.get("id") || "";
+    const qidParam = quizId ? `&qid=${quizId}` : "";
+
+    if (formData) {
       try {
-        const formDataParsed = JSON.parse(formDataStr);
-        const activeQuestions = getActiveQuestions(formDataParsed);
-        navigate(`/quiz/${activeQuestions.length}`, { state: { returnToScreen: 'problem' } });
+        const respostas = formData;
+        const respondeuExtras = !!respostas.faziaHorasExtras;
+        const activeQuestions = getActiveQuestions(respostas, {
+          mode: respondeuExtras ? 'extras' : 'essencial',
+        });
+        const extrasFlag = respondeuExtras ? '?extras=1' : '?';
+        navigate(`/quiz/${activeQuestions.length}${extrasFlag}${qidParam.replace(/^&/, respondeuExtras ? '&' : '')}`, {
+          state: { returnToScreen: 'problem' },
+        });
         return;
       } catch {}
     }
-    navigate("/quiz/1");
-  }, [navigate]);
+    navigate(`/quiz/1${quizId ? `?qid=${quizId}` : ''}`);
+  }, [navigate, searchParams, formData]);
   const scrollToOffer = useCallback(() => {
     offerCardRef.current?.scrollIntoView({
       behavior: "smooth",
@@ -303,6 +387,17 @@ export default function Resultado() {
       });
     }
   }, []);
+  // Loading enquanto busca quiz_sessions no banco
+  if (isLoadingFormData) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 mx-auto border-3 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Carregando seu resultado...</p>
+        </div>
+      </div>
+    );
+  }
   if (!resultado) return null;
   return (
     <>
@@ -483,7 +578,7 @@ export default function Resultado() {
 
             {!qrCodeUrl ? (
               <>
-                {/* Card de Oferta com Email integrado */}
+                {/* Card de Oferta — contém preço, form de captura e bullets */}
                 <div ref={emailFormRef}>
                   <OfferCard
                     ref={offerCardRef}

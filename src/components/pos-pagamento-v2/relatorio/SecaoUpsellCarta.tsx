@@ -92,7 +92,9 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
   // Check if bypass email
   const isBypass = email.toLowerCase() === BYPASS_EMAIL;
   const isBypassPrice = email.toLowerCase() === BYPASS_PRICE_EMAIL;
-  const upsellAmount = isBypassPrice ? 1 : 990;
+  // TEMP TEST: upsell a R$ 0,01 (reverter para: isBypassPrice ? 1 : 990)
+  void isBypassPrice;
+  const upsellAmount = 1;
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -101,15 +103,35 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
     };
   }, []);
 
-  // Check if carta was already generated (persisted in sessionStorage)
+  // Verifica se a carta já foi gerada para este cálculo (persistida no banco).
+  // Permite que, após F5, o upsell apareça já desbloqueado se o usuário pagou antes.
   useEffect(() => {
-    const storageKey = `carta-rh-${calcId}`;
-    const savedCarta = sessionStorage.getItem(storageKey);
-    if (savedCarta) {
-      setCartaGerada(savedCarta);
-      setJaDesbloqueado(true);
-      setEtapa('carta-gerada');
-    }
+    if (!calcId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('relatorios')
+          .select('conteudo')
+          .eq('calculo_id', calcId)
+          .eq('tipo', 'carta_rh')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        const carta = (data?.conteudo as { carta?: string } | null)?.carta;
+        if (carta) {
+          setCartaGerada(carta);
+          setJaDesbloqueado(true);
+          setEtapa('carta-gerada');
+        }
+      } catch {
+        // Silently ignore — fallback é o estado bloqueado padrão.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [calcId]);
 
   const appendTransactionId = () => {
@@ -147,7 +169,7 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('create-pix-v2', {
+      const { data, error } = await supabase.functions.invoke('create-pix', {
         body: {
           amount: upsellAmount,
           email,
@@ -204,7 +226,7 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
           body: { chargeId: cid }
         });
 
-        if (data?.status === 'paid') {
+        if (data?.paid === true || data?.status === 'pago') {
           if (pollingRef.current) clearInterval(pollingRef.current);
           toast({ title: 'Pagamento confirmado! ✅' });
           appendTransactionId();
@@ -224,7 +246,7 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
         body: { chargeId }
       });
       if (error) throw error;
-      if (data?.status === 'paid') {
+      if (data?.paid === true || data?.status === 'pago') {
         if (pollingRef.current) clearInterval(pollingRef.current);
         toast({ title: 'Pagamento confirmado! ✅' });
         appendTransactionId();
@@ -266,17 +288,46 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
           cnpj: cnpj || undefined,
           cargo: cargo || undefined,
           infoAdicional: infoAdicional || undefined,
-          ...dadosCarta
-        }
+          ...dadosCarta,
+        },
       });
-      if (error) throw error;
+      if (error) {
+        console.error('[gerar-carta-rh] error:', error);
+        throw error;
+      }
+      if (data?.error) {
+        console.error('[gerar-carta-rh] data.error:', data);
+        throw new Error(data.error);
+      }
+      if (!data?.carta) {
+        console.error('[gerar-carta-rh] resposta sem carta:', data);
+        throw new Error('Resposta da IA veio vazia');
+      }
       setCartaGerada(data.carta);
       setEtapa('carta-gerada');
       setJaDesbloqueado(true);
-      const storageKey = `carta-rh-${calcId}`;
-      sessionStorage.setItem(storageKey, data.carta);
-    } catch {
-      toast({ title: 'Erro ao gerar carta', description: 'Tente novamente.', variant: 'destructive' });
+      // Persiste no banco pra sobreviver a F5 / novo navegador.
+      if (calcId) {
+        try {
+          await supabase.from('relatorios').insert({
+            calculo_id: calcId,
+            tipo: 'carta_rh',
+            conteudo: { carta: data.carta, nomeCompleto, empresa, cargo },
+          });
+        } catch (persistErr) {
+          console.error('[gerar-carta-rh] erro ao persistir:', persistErr);
+        }
+      }
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Não conseguimos gerar a carta. Tente novamente.';
+      toast({
+        title: 'Erro ao gerar carta',
+        description: msg,
+        variant: 'destructive',
+      });
       setEtapa('formulario');
     } finally {
       setIsLoading(false);
@@ -326,25 +377,22 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
           {qrCode &&
           <div className="space-y-2">
               <p className="text-xs text-muted-foreground text-center">Ou copie o código PIX:</p>
-              <div className="flex gap-2">
-                <Input
+              <Input
                 readOnly value={qrCode} className="text-xs font-mono"
                 onClick={(e) => (e.target as HTMLInputElement).select()} />
-
-                <Button variant="outline" size="sm" onClick={() => {
-                navigator.clipboard.writeText(qrCode);
-                toast({ title: 'Código copiado!' });
-              }}>
-                  <Copy className="w-4 h-4" />
-                </Button>
-              </div>
             </div>
           }
 
-          <Button onClick={handleVerificarManual} disabled={checkingPayment} className="w-full" size="lg">
-            {checkingPayment ?
-            <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Verificando...</> :
-            'Consultar pagamento'}
+          <Button
+            onClick={() => {
+              if (!qrCode) return;
+              navigator.clipboard.writeText(qrCode);
+              toast({ title: 'Código copiado!' });
+            }}
+            className="w-full"
+            size="lg"
+          >
+            <Copy className="w-4 h-4 mr-2" /> Copiar Código PIX
           </Button>
 
           <div className="border-t pt-3 space-y-2">
@@ -521,7 +569,7 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
                 <p className="text-muted-foreground">
                   Eu, <strong className="text-foreground">{nomeCompleto || 'trabalhador(a)'}</strong>
                   {cargo && <>, ocupante do cargo de <strong className="text-foreground">{cargo}</strong></>}
-                  , venho por meio desta contestar os valores da minha rescisão contratual referente ao período 
+                  , venho por meio desta contestar os valores da minha rescisão contratual referente ao período
                   de <strong className="text-foreground">{formatarData(dadosCarta.dataAdmissao)}</strong> a <strong className="text-foreground">{formatarData(dadosCarta.dataDesligamento)}</strong> ({dadosCarta.tempoContrato}).
                 </p>
                 <p className="text-muted-foreground">
@@ -567,7 +615,6 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
                     <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
                       <Lock className="w-6 h-6 text-muted-foreground" />
                     </div>
-                    <p className="font-bold text-sm sm:text-base">Carta Bloqueada</p>
                     <p className="text-xs text-muted-foreground max-w-[250px]">Desbloqueie o modelo de carta pronta para enviar ao RH baseado nas informações do seu contrato
 
                   </p>

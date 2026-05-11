@@ -21,8 +21,8 @@ export default function TermosDeUso() {
             <section>
               <h2 className="text-base font-semibold text-gray-800 mb-2">1. Aceitação dos Termos</h2>
               <p>
-                Ao acessar e utilizar a plataforma Rescisão Certa ("Plataforma"), operada pela LLC Desenvolvimento Digital LTDA, 
-                inscrita no CNPJ sob o nº 58.455.659/0001-12, com sede no Setor SHN Quadra 2, Bloco F, Salas 625 e 626, Asa Norte, 
+                Ao acessar e utilizar a plataforma Rescisão Certa ("Plataforma"), operada pela Aileron Tecnologia LTDA, 
+                inscrita no CNPJ sob o nº 62.911.864/0001-12, com sede no Setor SHN Quadra 2, Bloco F, Salas 625 e 626, Asa Norte, 
                 Brasília – DF, você declara estar de acordo com estes Termos de Uso. Caso não concorde com qualquer disposição, 
                 recomendamos que não utilize a Plataforma.
               </p>
@@ -75,7 +75,7 @@ export default function TermosDeUso() {
               <h2 className="text-base font-semibold text-gray-800 mb-2">6. Propriedade Intelectual</h2>
               <p>
                 Todo o conteúdo da Plataforma, incluindo textos, gráficos, logotipos, ícones, imagens, algoritmos de cálculo e 
-                software, é propriedade da LLC Desenvolvimento Digital LTDA ou de seus licenciadores, protegido pelas leis 
+                software, é propriedade da Aileron Tecnologia LTDA ou de seus licenciadores, protegido pelas leis 
                 brasileiras de propriedade intelectual. É proibida a reprodução, distribuição ou modificação sem autorização prévia.
               </p>
             </section>

@@ -3,15 +3,14 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { QuizQuestionScreen } from '@/components/quiz-funnel/QuizQuestionScreen';
 import { QuizLoading } from '@/components/quiz-funnel/QuizLoading';
 import { QuizRiskScreen } from '@/components/quiz-funnel/QuizRiskScreen';
-import { QuizProblemScreen } from '@/components/quiz-funnel/QuizProblemScreen';
 import { QuizIntermediateScreen } from '@/components/quiz-funnel/QuizIntermediateScreen';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { getActiveQuestions, getCurrentEtapa, getTotalEtapas } from '@/components/quiz-funnel/questions';
 import { FormData } from '@/types/rescisao';
 import { useFunnelTracking } from '@/hooks/useFunnelTracking';
-
-const STORAGE_KEY = 'rescisao-calculator-form';
+import { useQuizSession } from '@/hooks/useQuizSession';
+import { supabase } from '@/integrations/supabase/client';
 
 // Estado inicial do formulário
 const defaultFormData: Partial<FormData> = {
@@ -31,7 +30,7 @@ const defaultFormData: Partial<FormData> = {
   anosServico: 0,
   saldoFGTS: 0,
   sabeSaldoFGTS: undefined,
-  numDependentes: undefined as unknown as number,
+  numDependentes: 0,
   faziaHorasExtras: '',
   bancoHoras: '',
   controlePonto: '',
@@ -53,64 +52,123 @@ export default function Quiz() {
   const navigate = useNavigate();
   const { step } = useParams<{ step: string }>();
   const location = useLocation();
-  
-  // Determinar o índice atual baseado na URL
-  const currentIndex = step ? parseInt(step, 10) - 1 : 0;
-  
-  const [sessionId] = useState<string>(() => {
-    // Recuperar ou gerar sessionId
-    const saved = sessionStorage.getItem('quiz-session-id');
-    if (saved) return saved;
-    const newId = crypto.randomUUID();
-    sessionStorage.setItem('quiz-session-id', newId);
-    return newId;
-  });
+
+  // Detectar se está no bloco "extras" via query param ?extras=1
+  const searchParams = new URLSearchParams(location.search);
+  const isExtrasMode = searchParams.get('extras') === '1';
+
+  // quiz_id propagado via query param ?qid=... em todas as URLs do funil
+  const qidFromUrl = searchParams.get('qid');
+
+  // Rotas especiais do funil (cada uma tem URL própria)
+  const isExtrasIntro = step === 'extras-intro';
+  const isProcessandoRoute = step === 'processando';
+  const isPreResultadoRoute = step === 'pre-resultado' || step === 'risco'; // 'risco' = legado
+  const isSpecialRoute = isExtrasIntro || isProcessandoRoute || isPreResultadoRoute;
+
+  // Determinar o índice atual baseado na URL (só faz sentido em rotas numéricas)
+  const currentIndex = step && !isSpecialRoute ? parseInt(step, 10) - 1 : 0;
+
+  // quiz_id (UUID): vem da URL ou é gerado novo. Não usa storage — F5 funciona
+  // porque o ?qid= na URL é a fonte da verdade.
+  const [sessionId] = useState<string>(() => qidFromUrl || crypto.randomUUID());
+
+  // Helper: monta query string preservando qid + flags do bloco atual
+  const buildQuery = (opts: { extras?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    params.set('qid', sessionId);
+    if (opts.extras) params.set('extras', '1');
+    return `?${params.toString()}`;
+  };
+
+  // Garante que a URL atual SEMPRE tenha o ?qid=... Sem isso, o usuário cai
+  // em /quiz/1 sem qid e só passa a aparecer a partir da pergunta 2.
+  useEffect(() => {
+    if (qidFromUrl || !sessionId) return;
+    const newSearch = new URLSearchParams(location.search);
+    newSearch.set('qid', sessionId);
+    navigate(`${location.pathname}?${newSearch.toString()}`, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, qidFromUrl]);
   
   // Checar se está voltando da página de resultado para uma tela específica
   const returnToScreen = (location.state as any)?.returnToScreen;
   
-  const [showLoading, setShowLoading] = useState(false);
-  const [showRisk, setShowRisk] = useState(returnToScreen === 'risk');
-  const [showProblem, setShowProblem] = useState(returnToScreen === 'problem');
-  const [showIntermediate, setShowIntermediate] = useState(false);
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
+
+  // Suporte ao state legado `returnToScreen` ('risk' | 'problem') vindo do Resultado:
+  // se chegou aqui, redirecionar para a rota equivalente.
+  useEffect(() => {
+    // Legado: 'risk' e 'problem' agora apontam pra mesma tela (unificada)
+    if ((returnToScreen === 'risk' || returnToScreen === 'problem') && !isPreResultadoRoute) {
+      navigate(`/quiz/pre-resultado${buildQuery()}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnToScreen]);
   const sessionInitializedRef = useRef(false);
   
   // Limpar estado de cálculo anterior ao iniciar quiz na etapa 1
   // Isso evita que dados de upsells de cálculos anteriores vazem para o novo
   useEffect(() => {
-    if (currentIndex === 0 && !returnToScreen) {
-      sessionStorage.removeItem('rescisao-calculo-id');
-      sessionStorage.removeItem('rescisao-codigo-unico');
-      sessionStorage.removeItem('rescisao-charge-id');
-      sessionStorage.removeItem('rescisao-email');
-      sessionStorage.removeItem('rescisao-session-active');
-      sessionStorage.removeItem('rescisao-valor-base-original');
-      sessionStorage.removeItem('rescisao-verbas-resultado');
-      // Limpar upsells antigos (chaves dinâmicas)
-      for (let i = sessionStorage.length - 1; i >= 0; i--) {
-        const key = sessionStorage.key(i);
-        if (key && (key.startsWith('carta-rh-') || key.startsWith('checklist-'))) {
-          sessionStorage.removeItem(key);
-        }
-      }
-    }
-  }, []); // Apenas na montagem
+    // (Sem limpeza de storage — não usamos mais sessionStorage para respostas.)
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Carregar dados do formulário
-  const [formData, setFormData] = useState<Record<string, unknown>>(() => {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
-    if (saved) {
+  // formData em React state (in-memory, instantâneo entre perguntas).
+  // Inicializa com defaultFormData; se houver ?qid= na URL e o user veio
+  // de um F5/link compartilhado, busca as respostas do Supabase em background.
+  const [formData, setFormData] = useState<Record<string, unknown>>(() => ({ ...defaultFormData }));
+
+  // Buscar respostas do banco quando ?qid= existe e formData ainda está vazio
+  useEffect(() => {
+    if (!qidFromUrl) return;
+    // Se o usuário JÁ respondeu pelo menos a primeira pergunta nesta aba,
+    // não sobrescreve com dados antigos do banco.
+    const jaTemRespostas = Object.values(formData).some(
+      (v) => v !== '' && v !== 0 && v !== false && v !== undefined && v !== null &&
+        !(Array.isArray(v) && v.length === 0),
+    );
+    if (jaTemRespostas) return;
+
+    let cancelled = false;
+    (async () => {
       try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    return { ...defaultFormData };
-  });
+        const { data, error } = await supabase
+          .from('quiz_sessions')
+          .select('respostas')
+          .eq('id', qidFromUrl)
+          .maybeSingle();
 
-  // Perguntas ativas baseadas nas respostas
-  const activeQuestions = useMemo(() => getActiveQuestions(formData), [formData]);
+        if (cancelled || error || !data?.respostas) return;
+        setFormData({ ...defaultFormData, ...(data.respostas as Record<string, unknown>) });
+      } catch (err) {
+        console.warn('[Quiz] erro ao recuperar respostas do banco:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qidFromUrl]);
+
+  // Perguntas ativas: 'essencial' por padrão, 'extras' quando ?extras=1
+  const activeQuestions = useMemo(
+    () => getActiveQuestions(formData, { mode: isExtrasMode ? 'extras' : 'essencial' }),
+    [formData, isExtrasMode],
+  );
   const totalQuestions = activeQuestions.length;
+
+  // Persiste sessão do quiz no Supabase (cria + sincroniza respostas)
+  useQuizSession({
+    quizId: sessionId,
+    respostas: formData,
+    etapaAtual: currentIndex,
+    bloco: isExtrasMode ? 'extras' : 'essencial',
+    // Marca completo já em /processando, antes do user clicar pra ver /resultado.
+    // Isso garante que quando o /resultado buscar a sessão, ela já tem
+    // respostas gravadas e `completo = true`.
+    completo: isProcessandoRoute || isPreResultadoRoute,
+  });
 
   // Calcular pontos de atenção baseados nas respostas, com persistência
   const pontosAtencao = useMemo(() => {
@@ -123,23 +181,7 @@ export default function Quiz() {
     if (Array.isArray(formData.adicionaisTrabalho) && formData.adicionaisTrabalho.length > 0) count++;
     if (formData.erroNaRescisao === 'sim' || formData.erroNaRescisao === 'nao-sei') count++;
     if ((formData.periodosFeriasVencidas as number) > 0) count++;
-    const clamped = Math.min(Math.max(count, 2), 5);
-    
-    // Persistir: só atualizar se o hash dos dados mudou
-    const hashKey = 'rescisao-pontos-hash';
-    const pontosKey = 'rescisao-pontos-atencao';
-    const relevantFields = ['faziaHorasExtras','bancoHoras','controlePonto','funcoesDiferentes','valorPorFora','adicionaisTrabalho','erroNaRescisao','periodosFeriasVencidas'];
-    const currentHash = relevantFields.map(f => `${f}:${JSON.stringify(formData[f] ?? '')}`).join('|');
-    const savedHash = sessionStorage.getItem(hashKey);
-    
-    if (savedHash === currentHash) {
-      const saved = sessionStorage.getItem(pontosKey);
-      if (saved) return parseInt(saved, 10);
-    }
-    
-    sessionStorage.setItem(hashKey, currentHash);
-    sessionStorage.setItem(pontosKey, String(clamped));
-    return clamped;
+    return Math.min(Math.max(count, 2), 5);
   }, [formData]);
   
   // Hook de tracking do funil
@@ -179,12 +221,13 @@ export default function Quiz() {
     }
   }, []);
 
-  // Validar se o step é válido e se o usuário pode acessar a pergunta pela URL
+  // Validar se o step é válido e se o usuário pode acessar a pergunta pela URL.
+  // Rotas especiais (processando, risco, diagnostico, extras-intro) não passam por essa validação.
   useEffect(() => {
-    if (showLoading || showRisk) return;
+    if (isSpecialRoute) return;
 
     if (isNaN(currentIndex) || currentIndex < 0) {
-      navigate('/quiz/1', { replace: true });
+      navigate(`/quiz/1${buildQuery()}`, { replace: true });
       return;
     }
 
@@ -201,9 +244,9 @@ export default function Quiz() {
     const maxReachableIndex = Math.min(maxAnsweredIndex + 1, Math.max(activeQuestions.length - 1, 0));
 
     if (currentIndex > maxReachableIndex) {
-      navigate(`/quiz/${maxReachableIndex + 1}`, { replace: true });
+      navigate(`/quiz/${maxReachableIndex + 1}${buildQuery({ extras: isExtrasMode })}`, { replace: true });
     }
-  }, [currentIndex, activeQuestions, formData, navigate, showLoading, showRisk, isQuestionAnswered]);
+  }, [currentIndex, activeQuestions, formData, navigate, isSpecialRoute, isExtrasMode, isQuestionAnswered]);
 
   // Iniciar sessão de tracking
   useEffect(() => {
@@ -213,27 +256,27 @@ export default function Quiz() {
     }
   }, [startSession]);
 
-  // Rastrear mudança de pergunta
+  // Rastrear mudança de pergunta (só nas rotas numéricas)
   useEffect(() => {
-    if (!showLoading && !showRisk && activeQuestions[currentIndex]) {
+    if (!isSpecialRoute && activeQuestions[currentIndex]) {
       trackQuestion(currentIndex, activeQuestions[currentIndex].campo);
     }
-  }, [currentIndex, activeQuestions, trackQuestion, showLoading, showRisk]);
+  }, [currentIndex, activeQuestions, trackQuestion, isSpecialRoute]);
 
   // Rastrear tela de loading
   useEffect(() => {
-    if (showLoading) {
+    if (isProcessandoRoute) {
       trackLoadingScreen();
       trackQuizCompleted();
     }
-  }, [showLoading, trackLoadingScreen, trackQuizCompleted]);
+  }, [isProcessandoRoute, trackLoadingScreen, trackQuizCompleted]);
 
-  // Rastrear tela de risco
+  // Rastrear tela de pré-resultado
   useEffect(() => {
-    if (showRisk) {
+    if (isPreResultadoRoute) {
       trackRiskScreen();
     }
-  }, [showRisk, trackRiskScreen]);
+  }, [isPreResultadoRoute, trackRiskScreen]);
 
   const currentQuestion = activeQuestions[currentIndex];
   
@@ -248,24 +291,26 @@ export default function Quiz() {
     let raw: number;
     if (currentQuestion?.progressoFixo !== undefined) {
       raw = currentQuestion.progressoFixo;
+    } else if (isExtrasMode) {
+      // Extras: 75% (primeira pergunta) → 100% (última).
+      // Linear no índice: 0 → 0, N-1 → 1.
+      const lastIdx = Math.max(totalQuestions - 1, 1);
+      const ratio = currentIndex / lastIdx;
+      raw = 75 + ratio * 25;
     } else {
-      const linearProgress = (currentIndex + 1) / totalQuestions;
-      raw = Math.pow(linearProgress, 0.7) * 100;
+      // Essencial: 0 → 75%, com curva côncava pra avançar rápido no início.
+      // Primeira pergunta arranca em ~8% pra dar feedback imediato.
+      const linear = (currentIndex + 1) / Math.max(totalQuestions, 1);
+      const eased = Math.pow(linear, 0.6);
+      raw = eased * 75;
     }
-    const clamped = Math.min(raw, 100);
+    const clamped = Math.min(Math.max(raw, 0), 100);
     // Never let progress go backwards
     maxProgressRef.current = Math.max(maxProgressRef.current, clamped);
     return maxProgressRef.current;
-  }, [currentQuestion, currentIndex, totalQuestions]);
+  }, [currentQuestion, currentIndex, totalQuestions, isExtrasMode]);
 
-  // Salvar no sessionStorage
-  const saveToStorage = useCallback((data: Record<string, unknown>) => {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {}
-  }, []);
-
-  // Atualizar resposta
+  // Atualizar resposta (em React state; persistência no Supabase via useQuizSession)
   const handleAnswer = useCallback((value: unknown) => {
     const campo = currentQuestion.campo;
     setFormData(prev => {
@@ -274,60 +319,66 @@ export default function Quiz() {
       if (campo === 'situacaoAtual' && value === 'demitido_aviso') {
         updated.tipoAvisoPrevio = 'trabalhado';
       }
-      saveToStorage(updated);
       return updated;
     });
-  }, [currentQuestion, saveToStorage]);
+  }, [currentQuestion]);
 
   // Atualizar campos extras (para date-range)
   const handleExtraChange = useCallback((field: string, value: string) => {
-    setFormData(prev => {
-      const updated = { ...prev, [field]: value };
-      saveToStorage(updated);
-      return updated;
-    });
-  }, [saveToStorage]);
+    setFormData(prev => ({ ...prev, [field]: value }));
+  }, []);
 
   // Próxima pergunta
   const handleNext = useCallback(() => {
-    // Recalcular perguntas ativas com o novo formData
-    const updatedQuestions = getActiveQuestions(formData);
-    
+    // Recalcular perguntas ativas com o novo formData no MESMO modo (essencial vs extras)
+    const updatedQuestions = getActiveQuestions(formData, {
+      mode: isExtrasMode ? 'extras' : 'essencial',
+    });
+
     if (currentIndex < updatedQuestions.length - 1) {
-      // Verificar se estamos saindo da etapa 3 para a etapa 4
-      const currentEtapaValue = updatedQuestions[currentIndex]?.etapa;
-      const nextEtapaValue = updatedQuestions[currentIndex + 1]?.etapa;
-      
-      if (currentEtapaValue !== undefined && currentEtapaValue <= 3 && nextEtapaValue === 4) {
-        setShowIntermediate(true);
-        return;
-      }
-      
+      // Próxima pergunta dentro do mesmo bloco — preserva ?extras=1 se estiver no bloco extras
       setDirection('forward');
-      navigate(`/quiz/${currentIndex + 2}`);
+      navigate(`/quiz/${currentIndex + 2}${buildQuery({ extras: isExtrasMode })}`);
+    } else if (!isExtrasMode) {
+      // Terminou o BLOCO ESSENCIAL — mostra a tela intermediária antes das extras
+      navigate(`/quiz/extras-intro${buildQuery()}`);
     } else {
-      // Última pergunta - ir para loading
-      setShowLoading(true);
+      // Terminou o BLOCO EXTRAS — vai pra tela de processamento
+      navigate(`/quiz/processando${buildQuery()}`);
     }
-  }, [currentIndex, formData, navigate]);
+  }, [currentIndex, formData, isExtrasMode, navigate, sessionId]);
 
   // Pergunta anterior
   const handlePrevious = useCallback(() => {
+    setDirection('backward');
+
+    if (isExtrasMode) {
+      // Estamos no bloco EXTRAS
+      if (currentIndex > 0) {
+        // Volta uma pergunta dentro das extras (preserva ?extras=1)
+        navigate(`/quiz/${currentIndex}${buildQuery({ extras: true })}`);
+      } else {
+        // Primeira pergunta das extras → volta pra tela intermediária
+        navigate(`/quiz/extras-intro${buildQuery()}`);
+      }
+      return;
+    }
+
+    // Bloco ESSENCIAL
     if (currentIndex > 0) {
-      setDirection('backward');
-      navigate(`/quiz/${currentIndex}`);
+      navigate(`/quiz/${currentIndex}${buildQuery()}`);
     } else {
-      // Voltar para landing
+      // Primeira pergunta do essencial → volta pra landing
       navigate('/');
     }
-  }, [currentIndex, navigate]);
+  }, [currentIndex, isExtrasMode, navigate, sessionId]);
 
   // Após loading - ir para tela de risco
   const handleLoadingComplete = useCallback(() => {
-    const updatedData = { 
-      ...formData, 
-      numDependentes: typeof formData.numDependentes === 'string' 
-        ? parseInt(formData.numDependentes as string, 10) 
+    const updatedData = {
+      ...formData,
+      numDependentes: typeof formData.numDependentes === 'string'
+        ? parseInt(formData.numDependentes as string, 10)
         : formData.numDependentes,
       periodosFeriasVencidas: typeof formData.periodosFeriasVencidas === 'string'
         ? parseInt(formData.periodosFeriasVencidas as string, 10)
@@ -336,9 +387,9 @@ export default function Quiz() {
         ? parseInt(formData.mesesDesdeUltimaFerias as string, 10)
         : formData.mesesDesdeUltimaFerias,
     };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
-    setShowRisk(true);
-  }, [formData]);
+    setFormData(updatedData);
+    navigate(`/quiz/pre-resultado${buildQuery()}`);
+  }, [formData, navigate, sessionId]);
 
   // Valor atual da pergunta
   const currentValue = currentQuestion ? formData[currentQuestion.campo] : undefined;
@@ -349,42 +400,36 @@ export default function Quiz() {
     dataDesligamento: formData.dataDesligamento as string || '',
   };
 
-  // Se estiver no loading
-  if (showLoading && !showRisk) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <Header />
-        <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12">
-          <div className="w-full max-w-[480px]">
-            <QuizLoading onComplete={handleLoadingComplete} />
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
+  // ============ ROTAS ESPECIAIS DO FUNIL ============
 
-  // Se estiver na tela intermediária
-  if (showIntermediate) {
+  // /quiz/extras-intro — tela intermediária antes do bloco extras
+  if (isExtrasIntro) {
     return (
       <QuizIntermediateScreen
         onContinue={() => {
-          setShowIntermediate(false);
-          setDirection('forward');
-          navigate(`/quiz/${currentIndex + 2}`);
+          // Recomeça a navegação no índice 1 do bloco extras (?extras=1 ativa o filtro)
+          navigate(`/quiz/1${buildQuery({ extras: true })}`);
         }}
       />
     );
   }
 
-  // Se estiver na tela de problema (após risco)
-  if (showProblem) {
-    return <QuizProblemScreen pontosAtencao={pontosAtencao} onContinue={() => navigate(`/resultado?id=${sessionId}`)} onBack={() => setShowProblem(false)} />;
+  // /quiz/processando — animação de loading (tela cheia, fundo azul)
+  if (isProcessandoRoute) {
+    return <QuizLoading onComplete={handleLoadingComplete} />;
   }
 
-  // Se estiver na tela de risco
-  if (showRisk) {
-    return <QuizRiskScreen sessionId={sessionId} formData={formData} onContinue={() => setShowProblem(true)} onBack={() => { setShowRisk(false); setShowLoading(false); }} />;
+  // /quiz/pre-resultado — análise unificada (gauge + pontos críticos + CTA)
+  if (isPreResultadoRoute) {
+    return (
+      <QuizRiskScreen
+        sessionId={sessionId}
+        formData={formData}
+        pontosAtencao={pontosAtencao}
+        onContinue={() => navigate(`/resultado?qid=${sessionId}`)}
+        onBack={() => navigate(`/quiz/processando${buildQuery()}`)}
+      />
+    );
   }
 
   // Se não há pergunta válida

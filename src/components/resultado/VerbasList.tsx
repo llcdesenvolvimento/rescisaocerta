@@ -91,10 +91,10 @@ export const VerbasList = memo(function VerbasList({
                 return (
                   <div
                     key={verba.id || index}
-                    className="flex items-start justify-between bg-card rounded-lg px-2.5 py-2 gap-2"
+                    className="flex items-center justify-between bg-card rounded-lg px-2.5 py-2 gap-2"
                   >
-                    <div className="flex items-start gap-2 min-w-0 flex-1">
-                      <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <span className="text-[11px] sm:text-xs text-foreground font-semibold leading-tight break-words">
                         {verba.descricao}
                       </span>
@@ -111,10 +111,10 @@ export const VerbasList = memo(function VerbasList({
                 return (
                   <div
                     key={verba.id || index}
-                    className="flex items-start justify-between bg-card rounded-lg px-2.5 py-2 gap-2"
+                    className="flex items-center justify-between bg-card rounded-lg px-2.5 py-2 gap-2"
                   >
-                    <div className="flex items-start gap-2 min-w-0 flex-1">
-                      <Icon className="h-4 w-4 text-destructive/70 flex-shrink-0 mt-0.5" />
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Icon className="h-4 w-4 text-destructive/70 flex-shrink-0" />
                       <span className="text-[11px] sm:text-xs text-foreground font-semibold leading-tight break-words">
                         {verba.descricao}
                       </span>
@@ -159,10 +159,10 @@ export const VerbasList = memo(function VerbasList({
             return (
               <div
                 key={index}
-                className="flex items-start justify-between bg-card rounded-lg px-2.5 py-2 gap-2"
+                className="flex items-center justify-between bg-card rounded-lg px-2.5 py-2 gap-2"
               >
-                <div className="flex items-start gap-2 min-w-0 flex-1">
-                  <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   <span className="text-[11px] sm:text-xs text-foreground font-semibold leading-tight break-words">{verba.nome}</span>
                 </div>
                 <div className="relative flex items-center flex-shrink-0">
@@ -187,9 +187,12 @@ export const VerbasList = memo(function VerbasList({
         </div>
       </section>
 
-      <p className="text-[11px] text-destructive font-bold text-center">
-        Confira esses valores antes de assinar a rescisão
-      </p>
+      <div className="bg-card border-2 border-primary rounded-xl px-4 py-3.5 text-center overflow-hidden shadow-md">
+        <p className="text-sm sm:text-base text-primary font-extrabold whitespace-nowrap flex items-center justify-center gap-2">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          Confira o valor total na Análise Completa
+        </p>
+      </div>
     </div>
   );
 });
