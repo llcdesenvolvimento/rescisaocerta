@@ -126,10 +126,7 @@ export function usePixPayment({ calculoId: initialCalculoId, formData, valorBase
 
     const emailTrimmed = email.trim().toLowerCase();
     const BYPASS_EMAIL = "jpabreupontes@gmail.com";
-    // TEMP TEST: todos os pagamentos a R$ 0,01 (reverter para: emailTrimmed === BYPASS_EMAIL ? 1 : 1690)
-    void emailTrimmed;
-    void BYPASS_EMAIL;
-    const amount = 1;
+    const amount = emailTrimmed === BYPASS_EMAIL ? 1 : 1690;
 
     setTimeout(() => setLoadingStep(2), 800);
     setTimeout(() => setLoadingStep(3), 2500);

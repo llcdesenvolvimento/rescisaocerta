@@ -50,9 +50,7 @@ export function SecaoUpsellChecklist({ dadosChecklist, emailUsuario, calculoId }
 
   const isBypass = email.toLowerCase() === BYPASS_EMAIL;
   const isBypassPrice = email.toLowerCase() === BYPASS_PRICE_EMAIL;
-  // TEMP TEST: upsell a R$ 0,01 (reverter para: isBypassPrice ? 1 : 690)
-  void isBypassPrice;
-  const upsellAmount = 1;
+  const upsellAmount = isBypassPrice ? 1 : 690;
 
   useEffect(() => {
     return () => {

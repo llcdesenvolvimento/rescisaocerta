@@ -92,9 +92,7 @@ export function SecaoUpsellCarta({ dadosCarta, emailUsuario, calculoId }: SecaoU
   // Check if bypass email
   const isBypass = email.toLowerCase() === BYPASS_EMAIL;
   const isBypassPrice = email.toLowerCase() === BYPASS_PRICE_EMAIL;
-  // TEMP TEST: upsell a R$ 0,01 (reverter para: isBypassPrice ? 1 : 990)
-  void isBypassPrice;
-  const upsellAmount = 1;
+  const upsellAmount = isBypassPrice ? 1 : 990;
 
   // Cleanup polling on unmount
   useEffect(() => {
