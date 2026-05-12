@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { trackPurchase } from '@/lib/meta-pixel';
 import { Button } from '@/components/ui/button';
 import {
   FormularioPosPagamentoV2 as FormularioPosPagamentoV2Type,
@@ -319,13 +320,43 @@ export default function Relatorio() {
 
   // Popup "Pagamento confirmado!" quando o usuário acabou de pagar.
   // Remove `paid=1` da URL para não disparar de novo em F5.
+  // Também dispara o evento Purchase no Meta Pixel.
   useEffect(() => {
-    if (searchParams.get('paid') === '1') {
-      setShowPaidPopup(true);
-      const next = new URLSearchParams(searchParams);
-      next.delete('paid');
-      setSearchParams(next, { replace: true });
+    if (searchParams.get('paid') !== '1') return;
+    const calculoId = searchParams.get('id');
+    setShowPaidPopup(true);
+
+    // Busca o pagamento mais recente pago desse cálculo pra reportar o valor
+    // ao Meta Pixel. Idempotência: usamos o id do pagamento como eventID.
+    if (calculoId) {
+      (async () => {
+        try {
+          const { data: pgto } = await supabase
+            .from('pagamentos')
+            .select('id, amount_cents')
+            .eq('calculo_id', calculoId)
+            .eq('status', 'pago')
+            .order('paid_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (pgto?.amount_cents) {
+            const value = pgto.amount_cents / 100;
+            trackPurchase({
+              value,
+              currency: 'BRL',
+              contentName: 'Análise Completa de Rescisão',
+              transactionId: pgto.id,
+            });
+          }
+        } catch (err) {
+          console.warn('[Relatorio] erro ao buscar pagamento p/ pixel:', err);
+        }
+      })();
     }
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('paid');
+    setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {

@@ -77,7 +77,7 @@ serve(async (req) => {
 
     console.log(`[webhook-pix] OK: ${data?.length || 0} pagamentos atualizados`);
 
-    // Também registra um evento de telemetria
+    // Telemetria + disparo do e-mail com link da análise.
     if (data && data.length > 0 && newStatus === "pago") {
       const pagamento = data[0];
       await supabase.from("eventos").insert({
@@ -85,6 +85,22 @@ serve(async (req) => {
         calculo_id: pagamento.calculo_id,
         tipo: "pagamento_confirmado",
         metadata: { charge_id: chargeId, source: "webhook" },
+      });
+
+      // Fire-and-forget: chama a função de e-mail sem bloquear a resposta
+      // do webhook (o Pagar.me não tolera latência).
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      fetch(`${supabaseUrl}/functions/v1/enviar-email-relatorio`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ pagamentoId: pagamento.id }),
+      }).catch((err) => {
+        // erros aqui não devem quebrar o webhook
+        console.error("[webhook-pix] falha ao invocar enviar-email-relatorio:", err);
       });
     }
 

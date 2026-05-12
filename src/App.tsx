@@ -17,8 +17,16 @@ import BlogPost from "./pages/BlogPost";
 import NotFound from "./pages/NotFound";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { CookieConsent } from "./components/CookieConsent";
+import { useMetaPageView } from "@/hooks/useMetaPageView";
 
 const queryClient = new QueryClient();
+
+// Componente filho do BrowserRouter pra ter acesso ao useLocation.
+// Dispara fbq('track', 'PageView') a cada mudança de rota do React Router.
+function MetaPixelPageViewTracker() {
+  useMetaPageView();
+  return null;
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -27,6 +35,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <ScrollToTop />
+        <MetaPixelPageViewTracker />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/test" element={<Index />} />
